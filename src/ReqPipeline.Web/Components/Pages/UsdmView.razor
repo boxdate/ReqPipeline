@@ -1,0 +1,121 @@
+@page "/usdm"
+@implements IDisposable
+@inject WorkspaceStateService Workspace
+@inject IJSRuntime JS
+
+<PageTitle>USDM View - ReqPipeline V2</PageTitle>
+
+<div class="container py-3" style="max-width: 1100px;">
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        <div>
+            <h4 class="fw-bold mb-0">USDM Markdown View</h4>
+            <div class="text-muted small">
+                <code>UsdmMarkdownRenderer</code> による <code>Rationale → Composite → Atomic</code> の決定論的出力
+            </div>
+        </div>
+
+        <div class="d-flex align-items-center gap-2">
+            @if (_copied)
+            {
+                <span class="chip-badge chip-ok">コピーしました</span>
+            }
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CopyMarkdown">
+                Markdownをコピー
+            </button>
+            <button type="button" class="btn btn-sm btn-primary" @onclick="DownloadMarkdown">
+                .md ダウンロード
+            </button>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <!-- Structured Visual Preview -->
+        <div class="col-lg-6">
+            <div class="slot-card h-100">
+                <div class="wb-section-title">Structured Hierarchy Preview</div>
+                <h5 class="fw-bold">@Workspace.Document.Title</h5>
+                @if (!string.IsNullOrWhiteSpace(Workspace.Document.Description))
+                {
+                    <p class="small text-muted">@Workspace.Document.Description</p>
+                }
+
+                @foreach (var rat in Workspace.Document.Rationales)
+                {
+                    <div class="border rounded p-3 mb-3 bg-light">
+                        <div class="fw-bold text-primary">[@rat.Id] @rat.Title</div>
+                        <div class="small text-muted mb-2">@rat.Description</div>
+
+                        @foreach (var comp in Workspace.Document.Requirements
+                            .Where(r => string.IsNullOrWhiteSpace(r.ParentRequirementId) && r.RationaleRefs.Contains(rat.Id)))
+                        {
+                            <div class="ms-2 mt-2">
+                                <div class="fw-semibold small">▸ [@comp.Id] @comp.Title</div>
+                                @if (!string.IsNullOrWhiteSpace(comp.Summary))
+                                {
+                                    <div class="small text-dark mt-1 mb-1 ps-2 border-start border-2 border-primary">@comp.Summary</div>
+                                }
+                                <ol class="small mt-1 mb-0">
+                                    @foreach (var child in Workspace.Document.Requirements.Where(c => c.ParentRequirementId == comp.Id))
+                                    {
+                                        <li class="mb-1">
+                                            <strong>[@child.Id] @child.Title</strong>
+                                            <span class="badge bg-white text-dark border mx-1">@child.EarsPattern</span>
+                                            <span>@Workspace.RenderJapanesePreview(child)</span>
+                                        </li>
+                                    }
+                                </ol>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Raw Markdown -->
+        <div class="col-lg-6">
+            <div class="slot-card h-100 d-flex flex-column">
+                <div class="wb-section-title">Generated Markdown Source</div>
+                <pre class="bg-dark text-light p-3 rounded small flex-grow-1 mb-0" style="white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">@Workspace.RenderUsdmMarkdown()</pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool _copied;
+
+    protected override void OnInitialized()
+    {
+        Workspace.OnChange += HandleChanged;
+    }
+
+    private void HandleChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CopyMarkdown()
+    {
+        var md = Workspace.RenderUsdmMarkdown();
+        await JS.InvokeVoidAsync("reqPipelineV2.copyToClipboard", md);
+        _copied = true;
+        StateHasChanged();
+        await Task.Delay(2000);
+        _copied = false;
+        StateHasChanged();
+    }
+
+    private async Task DownloadMarkdown()
+    {
+        var md = Workspace.RenderUsdmMarkdown();
+        var docId = string.IsNullOrWhiteSpace(Workspace.Document.DocumentId)
+            ? "usdm-spec"
+            : Workspace.Document.DocumentId.ToLowerInvariant();
+        await JS.InvokeVoidAsync("reqPipelineV2.downloadTextFile", $"{docId}.usdm.md", md, "text/markdown;charset=utf-8");
+    }
+
+    public void Dispose()
+    {
+        Workspace.OnChange -= HandleChanged;
+    }
+}
