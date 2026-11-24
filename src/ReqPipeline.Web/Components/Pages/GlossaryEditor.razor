@@ -1,85 +1,85 @@
 @page "/glossary"
-@rendermode InteractiveServer
+@implements IDisposable
+@inject WorkspaceStateService Workspace
 
-@using System.IO
-@using ReqPipeline.Core.Models
-@using ReqPipeline.Core.Interfaces
+<PageTitle>Glossary - ReqPipeline V2</PageTitle>
 
-@inject IGlossaryProvider Provider
-
-<PageTitle>用語集 (Glossary) エディタ</PageTitle>
-
-<div class="container-fluid mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>📚 用語集 (Bounded Contexts)</h1>
-        <button class="btn btn-primary shadow-sm" @onclick="() => OpenModal(null)">
-            ➕ 新しい用語を定義
+<div class="container-fluid py-3 px-4" style="max-width: 1400px;">
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        <div>
+            <h4 class="fw-bold mb-0">Glossary 管理 (承認済み語彙)</h4>
+            <div class="text-muted small">Workbench のスロット候補と LINT-001 / LINT-002 / LINT-003 の正本語彙を管理します。</div>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" @onclick="CreateNewTerm">
+            ＋ 新規語彙を追加
         </button>
     </div>
 
-    <div class="row">
-        <div class="col-md-3">
-            <div class="card shadow-sm">
-                <div class="card-header bg-light fw-bold">
-                    🌐 Namespaces
+    <div class="row g-3">
+        <!-- Term List -->
+        <div class="col-lg-7">
+            <div class="slot-card">
+                <div class="row g-2 mb-3">
+                    <div class="col-md-5">
+                        <input type="text" class="form-control form-control-sm" placeholder="ID・名称で検索..."
+                               @bind="_searchText" @bind:event="oninput" />
+                    </div>
+                    <div class="col-md-7">
+                        <div class="chip-group">
+                            <button type="button" class="slot-chip @(_filterType is null ? "active" : "")"
+                                    @onclick="() => _filterType = null">
+                                すべて (@Workspace.Document.Glossary.Count)
+                            </button>
+                            @foreach (var ct in Enum.GetValues<ConceptType>())
+                            {
+                                var count = Workspace.Document.Glossary.Count(t => t.ConceptType == ct);
+                                <button type="button" class="slot-chip @(_filterType == ct ? "active" : "")"
+                                        @onclick="() => _filterType = ct">
+                                    @ct (@count)
+                                </button>
+                            }
+                        </div>
+                    </div>
                 </div>
-                <ul class="list-group list-group-flush">
-                    @foreach (var ns in _namespaces)
-                    {
-                        var isActive = ns == _selectedNamespace ? "active" : "";
-                        var badgeBg = ns.StartsWith("SYS") ? "bg-danger" : "bg-primary";
-                        <li class="list-group-item list-group-item-action d-flex justify-content-between align-items-center cursor-pointer @isActive"
-                            @onclick="() => SelectNamespace(ns)" style="cursor: pointer;">
-                            <span>
-                                <span class="badge @badgeBg me-2">@ns.Split(':').First()</span>
-                                @ns
-                            </span>
-                            <span class="badge bg-secondary rounded-pill">
-                                @_glossary.Entries.Count(e => e.Namespace == ns)
-                            </span>
-                        </li>
-                    }
-                </ul>
-            </div>
-        </div>
 
-        <div class="col-md-9">
-            <div class="card shadow-sm">
-                <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0 text-primary">
-                        <i class="bi bi-folder2-open me-2"></i> Namespace: <strong>@_selectedNamespace</strong>
-                    </h5>
-                </div>
-                <div class="card-body p-0">
-                    <table class="table table-hover mb-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm align-middle mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th style="width: 15%">Category</th>
-                                <th style="width: 25%">Term (用語)</th>
-                                <th style="width: 40%">Definition (定義・意味)</th>
-                                <th style="width: 20%" class="text-center">Action</th>
+                                <th>ID</th>
+                                <th>正規名称</th>
+                                <th>ConceptType</th>
+                                <th>LogicalType</th>
+                                <th>Namespace</th>
+                                <th class="text-end">操作</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var entry in _glossary.Entries.Where(e => e.Namespace == _selectedNamespace).OrderBy(e => e.Category).ThenBy(e => e.Term))
+                            @foreach (var term in FilteredTerms())
                             {
-                                <tr>
-                                    <td class="align-middle">
-                                        <span class="badge bg-secondary">@entry.Category</span>
+                                var isSelected = _selectedTermId == term.Id;
+                                <tr class="@(isSelected ? "table-primary" : "")" style="cursor:pointer"
+                                    @onclick="() => SelectTerm(term.Id)">
+                                    <td class="font-monospace small">@term.Id</td>
+                                    <td class="fw-semibold">@term.CanonicalName</td>
+                                    <td><span class="chip-badge chip-type">@term.ConceptType</span></td>
+                                    <td class="small">
+                                        @if (term.LogicalType.Kind == LogicalTypeKind.Enum)
+                                        {
+                                            <span>Enum [@string.Join(", ", term.LogicalType.AllowedValues)]</span>
+                                        }
+                                        else
+                                        {
+                                            <span>@term.LogicalType.Kind</span>
+                                        }
                                     </td>
-                                    <td class="align-middle fw-bold">@entry.Term</td>
-                                    <td class="align-middle text-muted small">@entry.Definition</td>
-                                    <td class="align-middle text-center">
-                                        <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => OpenModal(entry)">✎ 編集</button>
-                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteEntry(entry)">🗑️</button>
-                                    </td>
-                                </tr>
-                            }
-                            @if (!_glossary.Entries.Any(e => e.Namespace == _selectedNamespace))
-                            {
-                                <tr>
-                                    <td colspan="4" class="text-center text-muted py-4">
-                                        このネームスペースにはまだ用語がありません。
+                                    <td class="small text-muted">@(term.Namespace ?? "-")</td>
+                                    <td class="text-end">
+                                        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => DeleteTerm(term.Id)">
+                                            削除
+                                        </button>
                                     </td>
                                 </tr>
                             }
@@ -88,135 +88,255 @@
                 </div>
             </div>
         </div>
+
+        <!-- Term Editor -->
+        <div class="col-lg-5">
+            @{
+                var editing = GetSelectedTerm();
+            }
+            @if (editing is null)
+            {
+                <div class="slot-card text-center text-muted py-5">
+                    左の一覧から語彙を選択するか、「＋ 新規語彙を追加」をクリックしてください。
+                </div>
+            }
+            else
+            {
+                <div class="slot-card">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <span class="fw-bold">語彙の編集</span>
+                        <span class="badge bg-secondary font-monospace">@editing.Id</span>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="slot-label">ID</label>
+                        <input type="text" class="form-control form-control-sm font-monospace"
+                               value="@editing.Id"
+                               @onchange="e => RenameTermId(editing, e.Value?.ToString())" />
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="slot-label">正規名称 (CanonicalName)</label>
+                        <input type="text" class="form-control form-control-sm"
+                               value="@editing.CanonicalName"
+                               @oninput="e => { editing.CanonicalName = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-6">
+                            <label class="slot-label">ConceptType (7種)</label>
+                            <select class="form-select form-select-sm"
+                                    value="@editing.ConceptType"
+                                    @onchange="e => OnConceptTypeChanged(editing, e.Value?.ToString())">
+                                @foreach (var ct in Enum.GetValues<ConceptType>())
+                                {
+                                    <option value="@ct">@ct</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="slot-label">Namespace</label>
+                            <input type="text" class="form-control form-control-sm" placeholder="例: customer.domain"
+                                   value="@editing.Namespace"
+                                   @oninput="e => { editing.Namespace = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value.ToString(); Workspace.NotifyChanged(); }" />
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="slot-label">説明 (Description)</label>
+                        <textarea class="form-control form-control-sm" rows="2"
+                                  value="@editing.Description"
+                                  @oninput="e => { editing.Description = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }"></textarea>
+                    </div>
+
+                    <hr />
+
+                    <div class="mb-2">
+                        <label class="slot-label">LogicalType (値ドメイン定義)</label>
+                        <div class="chip-group">
+                            @foreach (var kind in Enum.GetValues<LogicalTypeKind>())
+                            {
+                                <button type="button"
+                                        class="slot-chip @(editing.LogicalType.Kind == kind ? "active" : "")"
+                                        @onclick="() => OnLogicalTypeKindChanged(editing, kind)">
+                                    @kind
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    @if (editing.LogicalType.Kind == LogicalTypeKind.Boolean)
+                    {
+                        <div class="small text-muted mt-2">
+                            許容値: <code>true</code> / <code>false</code>（自動閉包）
+                        </div>
+                    }
+                    else if (editing.LogicalType.Kind == LogicalTypeKind.Enum)
+                    {
+                        <div class="mt-3">
+                            <label class="slot-label">AllowedValues (Enum 値リスト)</label>
+                            <div class="input-group input-group-sm mb-2">
+                                <input type="text" class="form-control" placeholder="新しい値を入力 (例: Active)"
+                                       @bind="_newEnumValue"
+                                       @onkeydown="e => OnEnumInputKeyDown(e, editing)" />
+                                <button type="button" class="btn btn-outline-primary" @onclick="() => AddEnumValue(editing)">
+                                    追加
+                                </button>
+                            </div>
+                            <div class="chip-group">
+                                @foreach (var val in editing.LogicalType.AllowedValues.ToList())
+                                {
+                                    <span class="slot-chip slot-chip-value active d-inline-flex align-items-center gap-1">
+                                        @val
+                                        <button type="button" class="btn-close btn-close-white" style="font-size: 0.55rem;"
+                                                aria-label="Remove"
+                                                @onclick="() => RemoveEnumValue(editing, val)"></button>
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
     </div>
 </div>
 
-@* ===== 入力・編集モーダル ===== *@
-@if (_showModal)
-{
-    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">@(_isNew ? "用語の追加" : "用語の編集")</h5>
-                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Namespace (スコープ)</label>
-                        <input type="text" class="form-control" @bind="_formData.Namespace" list="namespace-options" placeholder="例: SYS, SW:LKAS" />
-                        <datalist id="namespace-options">
-                            @foreach (var ns in _namespaces) { <option value="@ns" /> }
-                        </datalist>
-                        <div class="form-text">システム全体なら「SYS」、特定機能なら「SW:機能名」を推奨します。</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Category (種類)</label>
-                        <select class="form-select" @bind="_formData.Category">
-                            @foreach (var cat in Enum.GetValues<GlossaryCategory>())
-                            {
-                                <option value="@cat">@cat</option>
-                            }
-                        </select>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Term (用語)</label>
-                        <input type="text" class="form-control" @bind="_formData.Term" placeholder="例: Emergency_Event" />
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Definition (定義・意味)</label>
-                        <textarea class="form-control" rows="3" @bind="_formData.Definition" placeholder="用語の明確な定義を記述してください"></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">キャンセル</button>
-                    <button type="button" class="btn btn-primary" @onclick="SaveModal">保存</button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
-
 @code {
-    private Glossary _glossary = new();
-    private List<string> _namespaces = new();
-    private string _selectedNamespace = "SYS";
-    private string _path = "";
-
-    // モーダル用
-    private bool _showModal = false;
-    private bool _isNew = false;
-    private GlossaryEntry _formData = new();
+    private string _searchText = string.Empty;
+    private ConceptType? _filterType;
+    private string? _selectedTermId;
+    private string _newEnumValue = string.Empty;
 
     protected override void OnInitialized()
     {
-        _path = Path.Combine(Directory.GetCurrentDirectory(), "glossary.json");
-        LoadData();
+        Workspace.OnChange += HandleChanged;
+        _selectedTermId = Workspace.Document.Glossary.FirstOrDefault()?.Id;
     }
 
-    private void LoadData()
+    private void HandleChanged()
     {
-        _glossary = Provider.Load(_path);
-        
-        // 既存のネームスペース一覧を抽出（もし空ならSYSを入れる）
-        _namespaces = _glossary.Entries.Select(e => e.Namespace).Distinct().OrderBy(n => n).ToList();
-        if (!_namespaces.Any()) _namespaces.Add("SYS");
-        
-        if (!_namespaces.Contains(_selectedNamespace))
+        InvokeAsync(StateHasChanged);
+    }
+
+    private IEnumerable<ApprovedGlossaryTerm> FilteredTerms()
+    {
+        IEnumerable<ApprovedGlossaryTerm> query = Workspace.Document.Glossary;
+        if (_filterType.HasValue)
         {
-            _selectedNamespace = _namespaces.FirstOrDefault() ?? "SYS";
+            query = query.Where(t => t.ConceptType == _filterType.Value);
         }
-    }
 
-    private void SelectNamespace(string ns) => _selectedNamespace = ns;
-
-    private void OpenModal(GlossaryEntry? existing)
-    {
-        _isNew = existing == null;
-        if (_isNew)
+        if (!string.IsNullOrWhiteSpace(_searchText))
         {
-            _formData = new GlossaryEntry { Namespace = _selectedNamespace };
+            query = query.Where(t =>
+                t.Id.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
+                || t.CanonicalName.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
         }
-        else
+
+        return query;
+    }
+
+    private ApprovedGlossaryTerm? GetSelectedTerm() =>
+        _selectedTermId is null
+            ? null
+            : Workspace.Document.Glossary.FirstOrDefault(t => string.Equals(t.Id, _selectedTermId, StringComparison.Ordinal));
+
+    private void SelectTerm(string termId)
+    {
+        _selectedTermId = termId;
+        _newEnumValue = string.Empty;
+    }
+
+    private void CreateNewTerm()
+    {
+        var idx = Workspace.Document.Glossary.Count + 1;
+        var id = $"TERM-NEW-{idx:000}";
+        while (Workspace.Document.Glossary.Any(t => t.Id == id))
         {
-            _formData = new GlossaryEntry
-            {
-                Id = existing!.Id,
-                Namespace = existing.Namespace,
-                Category = existing.Category,
-                Term = existing.Term,
-                Definition = existing.Definition
-            };
-        }
-        _showModal = true;
-    }
-
-    private void CloseModal() => _showModal = false;
-
-    private void SaveModal()
-    {
-        if (string.IsNullOrWhiteSpace(_formData.Namespace)) _formData.Namespace = "SYS";
-
-        if (_isNew) {
-            _glossary.Entries.Add(_formData);
-        } else {
-            var index = _glossary.Entries.FindIndex(e => e.Id == _formData.Id);
-            if (index >= 0) _glossary.Entries[index] = _formData;
+            idx++;
+            id = $"TERM-NEW-{idx:000}";
         }
 
-        Provider.Save(_glossary, _path);
-        LoadData();
-        _selectedNamespace = _formData.Namespace; // 保存したネームスペースを選択状態にする
-        CloseModal();
+        var term = new ApprovedGlossaryTerm
+        {
+            Id = id,
+            CanonicalName = $"新規語彙 {idx}",
+            ConceptType = _filterType ?? ConceptType.DomainObject,
+            LogicalType = new LogicalTypeDefinition { Kind = LogicalTypeKind.None }
+        };
+
+        Workspace.AddGlossaryTerm(term);
+        _selectedTermId = term.Id;
     }
 
-    private void DeleteEntry(GlossaryEntry entry)
+    private void DeleteTerm(string termId)
     {
-        _glossary.Entries.RemoveAll(e => e.Id == entry.Id);
-        Provider.Save(_glossary, _path);
-        LoadData();
+        Workspace.DeleteGlossaryTerm(termId);
+        if (_selectedTermId == termId)
+        {
+            _selectedTermId = Workspace.Document.Glossary.FirstOrDefault()?.Id;
+        }
+    }
+
+    private void RenameTermId(ApprovedGlossaryTerm term, string? newId)
+    {
+        if (string.IsNullOrWhiteSpace(newId))
+        {
+            return;
+        }
+
+        term.Id = newId.Trim();
+        _selectedTermId = term.Id;
+        Workspace.NotifyChanged();
+    }
+
+    private void OnConceptTypeChanged(ApprovedGlossaryTerm term, string? typeStr)
+    {
+        if (Enum.TryParse<ConceptType>(typeStr, out var ct))
+        {
+            term.ConceptType = ct;
+            Workspace.NotifyChanged();
+        }
+    }
+
+    private void OnLogicalTypeKindChanged(ApprovedGlossaryTerm term, LogicalTypeKind kind)
+    {
+        term.LogicalType.Kind = kind;
+        if (kind != LogicalTypeKind.Enum)
+        {
+            term.LogicalType.AllowedValues.Clear();
+        }
+        Workspace.NotifyChanged();
+    }
+
+    private void AddEnumValue(ApprovedGlossaryTerm term)
+    {
+        var trimmed = _newEnumValue.Trim();
+        if (!string.IsNullOrEmpty(trimmed) && !term.LogicalType.AllowedValues.Contains(trimmed, StringComparer.Ordinal))
+        {
+            term.LogicalType.AllowedValues.Add(trimmed);
+            _newEnumValue = string.Empty;
+            Workspace.NotifyChanged();
+        }
+    }
+
+    private void OnEnumInputKeyDown(KeyboardEventArgs e, ApprovedGlossaryTerm term)
+    {
+        if (e.Key == "Enter")
+        {
+            AddEnumValue(term);
+        }
+    }
+
+    private void RemoveEnumValue(ApprovedGlossaryTerm term, string val)
+    {
+        term.LogicalType.AllowedValues.Remove(val);
+        Workspace.NotifyChanged();
+    }
+
+    public void Dispose()
+    {
+        Workspace.OnChange -= HandleChanged;
     }
 }

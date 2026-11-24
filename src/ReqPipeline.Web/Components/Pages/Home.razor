@@ -1,444 +1,1249 @@
 ﻿@page "/"
-@rendermode InteractiveServer
+@implements IDisposable
+@inject WorkspaceStateService Workspace
 
-@using System.IO
-@using ReqPipeline.Core.Application
-@using ReqPipeline.Core.Models
-@using ReqPipeline.Core.Interfaces
-@using ReqPipeline.Core.QaIntegration
+<PageTitle>Workbench - ReqPipeline V2</PageTitle>
 
-@inject PipelineOrchestrator Orchestrator
-@inject IRequirementProvider Provider
-@inject IGlossaryProvider GlossaryProvider
-@inject AiQaPerspectiveGenerator QaGenerator
-@inject IRequirementProvider ReqProvider
-@inject IGlossaryProvider GlosProvider
-
-
-
-<PageTitle>USDM Editor & Viewer</PageTitle>
-
-<div class="container-fluid mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>📑 USDM Editor & Viewer</h1>
-        <div>
-            <button class="btn btn-outline-primary shadow-sm me-2" @onclick="() => OpenModal(null)">
-                ➕ 新しいルート要求を追加
-            </button>
-            <button class="btn btn-primary shadow" @onclick="RunPipeline" disabled="@_isRunning">
-                @if (_isRunning) { <span class="spinner-border spinner-border-sm"></span> }
-                else { <span>🔍 AI検証を実行</span> }
-            </button>
-        </div>
-    </div>
-
-    @if (_nodes.Any())
-    {
-        <div class="table-responsive shadow-sm rounded">
-            <table class="table table-bordered table-hover table-sm custom-usdm-table mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width: 8%">種別</th>
-                        <th style="width: 35%">記述 (要求 / 理由 / 仕様)</th>
-                        <th style="width: 25%">EARS コンテキスト</th>
-                        <th style="width: 12%">AI検証状態</th>
-                        <th style="width: 20%">アクション</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var node in _nodes)
-                    {
-                        var rowClass = node.Type switch {
-                            UsdmType.ParentRequirement => "table-primary-subtle fw-bold",
-                            UsdmType.Rationale => "table-secondary-subtle fst-italic",
-                            UsdmType.ChildRequirement => "table-info-subtle",
-                            _ => "bg-white"
-                        };
-                        var indent = node.ParentId == null ? 0 : (GetLevel(node) * 1.5);
-                        //var issues = _context?.Issues.Where(i => i.Message.Contains(node.Description)).ToList() ?? new();
-
-                        // 💡 メッセージのテキスト比較をやめて、ID（大文字小文字無視）で確実に紐付ける
-                        var issues = _context?.Issues.Where(i => 
-                            string.Equals(i.TargetNodeId, node.Id.ToString(), StringComparison.OrdinalIgnoreCase)
-                        ).ToList() ?? new();
-
-                        <tr class="@rowClass">
-                            <td class="align-middle text-center"><span class="badge @GetBadgeClass(node.Type)">@node.Type</span></td>
-                            <td class="align-middle">
-                                <div style="margin-left: @(indent)rem;">
-                                    @if (node.Type == UsdmType.ParentRequirement) 
-                                    { 
-                                        <span class="fs-6 fw-bold">@node.Description</span> 
-                                    }
-                                    else 
-                                    { 
-                                        @node.Description 
-                                    }
-
-                                    @* 子要求(Gherkin)の場合は、その下にBDDのシナリオを表示 *@
-                                    @if (node.Type == UsdmType.ChildRequirement && node.GherkinContext != null)
-                                    {
-                                        <div class="mt-1 small text-muted p-1 bg-light border rounded">
-                                            <strong>Given</strong> @node.GherkinContext.Given<br/>
-                                            <strong>When</strong> @node.GherkinContext.When<br/>
-                                            <strong>Then</strong> @node.GherkinContext.Then
-                                        </div>
-                                    }
-                                </div>
-                            </td>
-                            <td class="align-middle">
-                                @if (node.Type == UsdmType.Specification && node.EarsContext != null)
-                                {
-                                    <div class="ears-box small">
-                                        <span class="text-primary fw-bold">[@node.EarsContext.Pattern]</span><br/>
-                                        <span class="text-muted">Trigger:</span> @node.EarsContext.Trigger<br/>
-                                        <span class="text-muted">Actor:</span> @node.EarsContext.Actor<br/>
-                                        <span class="text-muted">Response:</span> @node.EarsContext.Response
-                                    </div>
-                                }
-                            </td>
-                            <td class="align-middle text-center">
-                                @if (issues.Any()) { <span class="badge bg-danger">⚠️ 矛盾</span> }
-                                else if (_context != null) { <span class="badge bg-success">✅ OK</span> }
-                                else { <span class="badge bg-secondary">未検証</span> }
-                            </td>
-                            <td class="align-middle text-center">
-                                <!-- 💡 QA観点生成ボタンを追加 -->
-                                @if (node.Type == UsdmType.Specification)
-                                {
-                                    <button class="btn btn-sm btn-outline-success me-1" title="QA観点を分析" @onclick="() => AnalyzeQaPerspectives(node)">
-                                        @if (_isQaRunning && _targetQaNodeId == node.Id) { <span class="spinner-border spinner-border-sm"></span> }
-                                        else { <span>🧪 QA分析</span> }
-                                    </button>
-                                }
-                                <button class="btn btn-sm btn-outline-primary me-1" title="子要素を追加" @onclick="() => OpenModal(null, node.Id)">➕</button>
-                                <button class="btn btn-sm btn-outline-secondary me-1" title="編集" @onclick="() => OpenModal(node)">✎</button>
-                                <button class="btn btn-sm btn-outline-danger" title="削除" @onclick="() => DeleteNode(node)">🗑️</button>
-                            </td>
-                        </tr>
-                        if (issues.Any())
-                        {
-                            <tr>
-                                <td colspan="5" class="p-0 border-0">
-                                    <div class="alert alert-danger m-0 rounded-0 p-2 small border-start border-danger border-4 d-flex align-items-start">
-                                        <span class="fs-5 me-2">🤖</span>
-                                        <div><strong>AI指摘:</strong> @issues.First().Message</div>
-                                    </div>
-                                </td>
-                            </tr>
-                        }
-                    }
-                </tbody>
-            </table>
-        </div>
-    }
-    else
-    {
-        <div class="alert alert-info mt-3">データがありません。「新しいルート要求を追加」から始めてください。</div>
-    }
-</div>
-
-@* ===== 入力・編集モーダル ===== *@
-@if (_showModal)
-{
-    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);" tabindex="-1">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">@(_isNewNode ? "ノードの追加" : "ノードの編集")</h5>
-                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+<div class="wb-grid">
+    <!-- ==================== LEFT PANE: TREE ==================== -->
+    <aside class="wb-pane wb-pane-left">
+        <div class="d-flex align-items-center justify-content-between mb-2 gap-1">
+            <div style="min-width: 0;">
+                <div class="wb-section-title mb-0">Knowledge Graph Tree</div>
+                <div class="fw-bold small text-truncate" title="@Workspace.Document.Title">
+                    @Workspace.Document.Title
                 </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">種別 (Type)</label>
-                        <select class="form-select" @bind="_formData.Type">
-                            <option value="@UsdmType.ParentRequirement">Requirement (要求)</option>
-                            <option value="@UsdmType.Rationale">Rationale (理由)</option>
-                            <option value="@UsdmType.ChildRequirement">Child Requirement (子要求)</option>
-                            <option value="@UsdmType.Specification">Specification (仕様)</option>
+            </div>
+            <div class="d-flex gap-1 flex-shrink-0">
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" title="理由 (Rationale) を追加"
+                        @onclick="() => Workspace.AddRationale()">
+                    + 理由
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" title="親要求を追加"
+                        @onclick="() => Workspace.AddCompositeRequirement()">
+                    + 親要求
+                </button>
+            </div>
+        </div>
+
+        <hr class="my-2" />
+
+        @{
+            var topLevelReqs = Workspace.Document.Requirements
+                .Where(r => string.IsNullOrWhiteSpace(r.ParentRequirementId))
+                .ToList();
+            var renderedTopIds = new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        @foreach (var rationale in Workspace.Document.Rationales)
+        {
+            var linked = topLevelReqs
+                .Where(r => r.RationaleRefs.Contains(rationale.Id, StringComparer.Ordinal))
+                .ToList();
+            var isRatSelected = string.Equals(Workspace.SelectedRationaleId, rationale.Id, StringComparison.Ordinal);
+
+            <div class="tree-rationale">
+                <div class="tree-rationale-header @(isRatSelected ? "selected" : "")"
+                     role="button"
+                     title="@rationale.Description"
+                     @onclick="() => Workspace.SelectRationale(rationale.Id)">
+                    <span class="text-truncate">[@rationale.Id] @rationale.Title</span>
+                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" title="この理由に親要求を追加"
+                            @onclick:stopPropagation="true"
+                            @onclick="() => Workspace.AddCompositeRequirement(rationale.Id)">
+                        +
+                    </button>
+                </div>
+
+                @foreach (var comp in linked)
+                {
+                    renderedTopIds.Add(comp.Id);
+                    @RenderTreeNode(comp, isChild: false)
+
+                    @foreach (var child in Workspace.Document.Requirements.Where(c => c.ParentRequirementId == comp.Id))
+                    {
+                        @RenderTreeNode(child, isChild: true)
+                    }
+                }
+            </div>
+        }
+
+        @{
+            var orphans = topLevelReqs.Where(r => !renderedTopIds.Contains(r.Id)).ToList();
+        }
+        @if (orphans.Count > 0)
+        {
+            <div class="tree-rationale">
+                <div class="tree-rationale-header text-danger">
+                    <span>未紐付け要求 (LINT-006)</span>
+                </div>
+                @foreach (var orphan in orphans)
+                {
+                    @RenderTreeNode(orphan, isChild: false)
+                    @foreach (var child in Workspace.Document.Requirements.Where(c => c.ParentRequirementId == orphan.Id))
+                    {
+                        @RenderTreeNode(child, isChild: true)
+                    }
+                }
+            </div>
+        }
+    </aside>
+
+    <!-- ==================== CENTER PANE: STRUCTURED SLOT EDITOR ==================== -->
+    <section class="wb-pane wb-pane-center">
+        @{
+            var selected = Workspace.GetSelectedRequirement();
+            var selectedRationale = Workspace.GetSelectedRationale();
+        }
+
+        @if (selectedRationale is not null)
+        {
+            var linkedParents = Workspace.Document.Requirements
+                .Where(r => string.IsNullOrWhiteSpace(r.ParentRequirementId)
+                            && r.RationaleRefs.Contains(selectedRationale.Id, StringComparer.Ordinal))
+                .ToList();
+
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-secondary">Rationale (理由)</span>
+                    <span class="fw-bold font-monospace">@selectedRationale.Id</span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-primary"
+                            @onclick="() => Workspace.AddCompositeRequirement(selectedRationale.Id)">
+                        ＋ この理由に親要求を追加
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-danger"
+                            @onclick="() => Workspace.DeleteRationale(selectedRationale.Id)">
+                        削除
+                    </button>
+                </div>
+            </div>
+
+            <div class="slot-card">
+                <div class="small text-muted mb-3">
+                    本来は上流（WDD 等）で導出した理由をインポートして利用しますが、テスト・試作時の微修正や追加をここで行えます。
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label class="slot-label">タイトル</label>
+                        <input type="text" class="form-control form-control-sm"
+                               value="@selectedRationale.Title"
+                               @oninput="e => { selectedRationale.Title = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="slot-label">ステークホルダー</label>
+                        <input type="text" class="form-control form-control-sm" placeholder="例: 営業部門"
+                               value="@selectedRationale.Stakeholder"
+                               @oninput="e => { selectedRationale.Stakeholder = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }" />
+                    </div>
+                    <div class="col-12">
+                        <label class="slot-label">理由本文 (Description)</label>
+                        <textarea class="form-control form-control-sm" rows="3"
+                                  placeholder="なぜこの要求群が必要か（背景・目的・課題）を記述"
+                                  value="@selectedRationale.Description"
+                                  @oninput="e => { selectedRationale.Description = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slot-card">
+                <div class="slot-card-header">
+                    <span class="slot-label mb-0">紐付く親要求 (@linkedParents.Count 件)</span>
+                </div>
+                @if (linkedParents.Count == 0)
+                {
+                    <div class="small text-muted">まだ親要求が紐付いていません。</div>
+                }
+                else
+                {
+                    <div class="list-group list-group-flush">
+                        @foreach (var p in linkedParents)
+                        {
+                            <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-2 px-2"
+                                    @onclick="() => Workspace.SelectRequirement(p.Id)">
+                                <span class="fw-semibold small">[@p.Id] @p.Title</span>
+                                <span class="text-primary small">開く →</span>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        else if (selected is null)
+        {
+            <div class="slot-card text-center py-5 text-muted">
+                左のツリーから要求ノードを選択するか、「+ 親要求」で新規作成してください。
+            </div>
+        }
+        else if (selected.NodeKind == RequirementNodeKind.Composite)
+        {
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-primary">Composite (親要求)</span>
+                    <span class="fw-bold font-monospace">@selected.Id</span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-primary" @onclick="() => Workspace.AddAtomicChild(selected)">
+                        ＋ 子要求（動作）を追加
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => Workspace.DeleteRequirement(selected.Id)">
+                        削除
+                    </button>
+                </div>
+            </div>
+
+            <div class="slot-card">
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label class="slot-label">タイトル</label>
+                        <input type="text" class="form-control form-control-sm"
+                               value="@selected.Title"
+                               @oninput="e => { selected.Title = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="slot-label">Namespace</label>
+                        <input type="text" class="form-control form-control-sm" placeholder="例: customer.crud"
+                               value="@selected.Namespace"
+                               @oninput="e => { selected.Namespace = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }" />
+                    </div>
+                    <div class="col-12">
+                        <label class="slot-label">
+                            親要求の文章（分解前の要求文）
+                            <span class="slot-type-hint">自然言語で記述可</span>
+                        </label>
+                        <textarea class="form-control form-control-sm" rows="3"
+                                  placeholder="例: 利用者が新規顧客を登録し、一覧から選択して詳細画面へ遷移できること。"
+                                  value="@selected.Summary"
+                                  @oninput="e => { selected.Summary = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slot-card">
+                <label class="slot-label">
+                    RationaleRefs (理由の紐付け)
+                    <span class="slot-type-hint">最上位要求は1つ以上必須 (LINT-006)</span>
+                </label>
+                <div class="chip-group mt-2">
+                    @foreach (var rat in Workspace.Document.Rationales)
+                    {
+                        var isLinked = selected.RationaleRefs.Contains(rat.Id, StringComparer.Ordinal);
+                        <button type="button"
+                                class="slot-chip @(isLinked ? "active" : "")"
+                                @onclick="() => ToggleRationaleRef(selected, rat.Id)">
+                            @(isLinked ? "✓ " : "")[@rat.Id] @rat.Title
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="slot-card">
+                <div class="slot-card-header">
+                    <span class="slot-label mb-0">
+                        分解前の共通要素（子要求へ自動引き継ぎ）
+                        <span class="slot-type-hint">Context / Actor / Trigger / Subject</span>
+                    </span>
+                </div>
+
+                <div class="mb-3">
+                    <label class="slot-label">既定の EARS パターン</label>
+                    <div class="chip-group">
+                        @foreach (var pattern in Enum.GetValues<EarsEntryPattern>())
+                        {
+                            <button type="button"
+                                    class="slot-chip @(selected.EarsPattern == pattern ? "active" : "")"
+                                    @onclick="() => { selected.EarsPattern = pattern; Workspace.NotifyChanged(); }">
+                                @FormatEarsLabel(pattern)
+                            </button>
+                        }
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label class="slot-label">対象システム <span class="slot-type-hint">System</span></label>
+                        <select class="form-select form-select-sm"
+                                value="@(selected.SubjectSystemRef ?? "")"
+                                @onchange="e => { selected.SubjectSystemRef = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
+                            <option value="">-- 未選択 --</option>
+                            @foreach (var sys in Workspace.GetGlossaryByTypes(ConceptType.System))
+                            {
+                                <option value="@sys.Id">@sys.CanonicalName</option>
+                            }
                         </select>
                     </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">記述 (Description)</label>
-                        <textarea class="form-control" rows="3" @bind="_formData.Description"></textarea>
+                    <div class="col-md-4">
+                        <label class="slot-label">共通アクター <span class="slot-type-hint">Actor</span></label>
+                        <select class="form-select form-select-sm"
+                                value="@(selected.ActorRef ?? "")"
+                                @onchange="e => { selected.ActorRef = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
+                            <option value="">-- 指定なし --</option>
+                            @foreach (var actor in Workspace.GetGlossaryByTypes(ConceptType.Actor))
+                            {
+                                <option value="@actor.Id">@actor.CanonicalName</option>
+                            }
+                        </select>
                     </div>
+                    <div class="col-md-4">
+                        <label class="slot-label">共通トリガー <span class="slot-type-hint">Event</span></label>
+                        <select class="form-select form-select-sm"
+                                value="@(selected.TriggerEventRef ?? "")"
+                                @onchange="e => { selected.TriggerEventRef = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
+                            <option value="">-- 指定なし --</option>
+                            @foreach (var evt in Workspace.GetGlossaryByTypes(ConceptType.Event))
+                            {
+                                <option value="@evt.Id">@evt.CanonicalName</option>
+                            }
+                        </select>
+                    </div>
+                </div>
 
-                    @if (_formData.Type == UsdmType.ChildRequirement)
-                    {
-                        <div class="card bg-info-subtle mt-3 border-info">
-                            <div class="card-body">
-                                <h6 class="card-title fw-bold text-info-emphasis">BDD コンテキスト (Gherkin)</h6>
-                                <div class="row g-2">
-                                    <div class="col-md-12">
-                                        <label class="form-label small">Given (前提状態)</label>
-                                        <input type="text" class="form-control form-control-sm" @bind="_formData.GherkinContext!.Given" placeholder="例: [SYS:User_Unauthenticated]" />
-                                    </div>
-                                    <div class="col-md-12">
-                                        <label class="form-label small">When (トリガー: 1動詞)</label>
-                                        <input type="text" class="form-control form-control-sm" @bind="_formData.GherkinContext!.When" placeholder="例: [SW:Auth:Login_Failed] が連続で発生する" />
-                                    </div>
-                                    <div class="col-md-12">
-                                        <label class="form-label small">Then (結果状態)</label>
-                                        <input type="text" class="form-control form-control-sm" @bind="_formData.GherkinContext!.Then" placeholder="例: アカウントをロックする" />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                <div>
+                    <div class="d-flex align-items-center justify-content-between mb-1">
+                        <span class="slot-label mb-0">共通の前提条件 (Preconditions)</span>
+                        <button type="button" class="btn btn-sm btn-outline-primary py-0"
+                                @onclick="() => AddPrecondition(selected)">
+                            + 条件追加
+                        </button>
+                    </div>
+                    @{
+                        var parentStateTerms = Workspace.GetGlossaryByTypes(ConceptType.StateVariable, ConceptType.LifecycleState);
                     }
-                    else if (_formData.Type == UsdmType.Specification)
+                    @if (selected.Preconditions.Count == 0)
                     {
-                        <div class="card bg-light mt-3">
-                            <div class="card-body">
-                                <h6 class="card-title fw-bold text-primary">EARS コンテキスト定義</h6>
-                                <div class="row g-2">
+                        <div class="small text-muted">共通の前提条件はありません。</div>
+                    }
+                    else
+                    {
+                        @for (var i = 0; i < selected.Preconditions.Count; i++)
+                        {
+                            var idx = i;
+                            var clause = selected.Preconditions[idx];
+                            var allowedVals = Workspace.GetAllowedValues(clause.StateTermRef);
+                            <div class="border rounded p-2 mb-2 bg-light">
+                                <div class="row g-2 align-items-center mb-2">
                                     <div class="col-md-6">
-                                        <label class="form-label small">Pattern (パターン)</label>
-                                        <select class="form-select form-select-sm" @bind="_formData.EarsContext!.Pattern">
-                                            <option value="EventDriven">Event-Driven (〜時)</option>
-                                            <option value="StateDriven">State-Driven (〜状態の間)</option>
-                                            <option value="Ubiquitous">Ubiquitous (常に)</option>
+                                        <select class="form-select form-select-sm"
+                                                value="@clause.StateTermRef"
+                                                @onchange="e => OnPreconditionStateChanged(clause, e.Value?.ToString())">
+                                            <option value="">-- 状態語彙を選択 --</option>
+                                            @foreach (var st in parentStateTerms)
+                                            {
+                                                <option value="@st.Id">@st.CanonicalName (@st.ConceptType)</option>
+                                            }
                                         </select>
                                     </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label small">Trigger / State (条件)</label>
-                                        <input type="text" class="form-control form-control-sm" @bind="_formData.EarsContext!.Trigger" />
+                                    <div class="col-md-4">
+                                        <select class="form-select form-select-sm"
+                                                value="@clause.Operator"
+                                                @onchange="e => OnPreconditionOperatorChanged(clause, e.Value?.ToString())">
+                                            @foreach (var op in Enum.GetValues<ComparisonOperator>())
+                                            {
+                                                <option value="@op">@op</option>
+                                            }
+                                        </select>
                                     </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label small">Actor (アクター)</label>
-                                        <input type="text" class="form-control form-control-sm" @bind="_formData.EarsContext!.Actor" />
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label small">Response (振る舞い)</label>
-                                        <input type="text" class="form-control form-control-sm" @bind="_formData.EarsContext!.Response" />
+                                    <div class="col-md-2 text-end">
+                                        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2"
+                                                @onclick="() => { selected.Preconditions.RemoveAt(idx); Workspace.NotifyChanged(); }">
+                                            ×
+                                        </button>
                                     </div>
                                 </div>
+                                <div class="chip-group">
+                                    @foreach (var val in allowedVals)
+                                    {
+                                        var activeVal = clause.ExpectedValues.Contains(val, StringComparer.Ordinal);
+                                        <button type="button"
+                                                class="slot-chip slot-chip-value @(activeVal ? "active" : "")"
+                                                @onclick="() => ToggleExpectedValue(clause, val)">
+                                            @val
+                                        </button>
+                                    }
+                                </div>
                             </div>
-                        </div>
+                        }
                     }
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">キャンセル</button>
-                    <button type="button" class="btn btn-primary" @onclick="SaveModal">保存して検証</button>
-                </div>
             </div>
-        </div>
-    </div>
-}
 
-@* ===== QA観点表示モーダル ===== *@
-@if (_showQaModal)
-{
-    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);" tabindex="-1">
-        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title"><i class="bi bi-shield-check"></i> 抽出されたテスト観点 (Test Perspectives)</h5>
-                    <button type="button" class="btn-close btn-close-white" @onclick="CloseQaModal"></button>
+            <div class="slot-card">
+                <div class="slot-card-header">
+                    <span class="slot-label mb-0">連続した振る舞いフロー (子要求ステップ)</span>
+                    <button type="button" class="btn btn-sm btn-outline-primary py-0" @onclick="() => Workspace.AddAtomicChild(selected)">
+                        ＋ 子要求（動作）を追加
+                    </button>
                 </div>
-                <div class="modal-body bg-light">
-                    <div class="alert alert-info border-0 shadow-sm">
-                        <strong>対象仕様:</strong> @_qaTargetNode?.Description
+                @{
+                    var children = Workspace.Document.Requirements
+                        .Where(c => c.ParentRequirementId == selected.Id)
+                        .ToList();
+                }
+                @if (children.Count == 0)
+                {
+                    <div class="text-danger small">
+                        まだ子要求へ分解されていません（LINT-004）。「＋ 子要求（動作）を追加」から連続する振る舞いステップを追加してください。
                     </div>
-                    
-                    <div class="row row-cols-1 row-cols-md-2 g-4 mt-2">
-                        @foreach (var p in _qaPerspectives)
+                }
+                else
+                {
+                    <div class="d-flex flex-column gap-2">
+                        @for (var stepIdx = 0; stepIdx < children.Count; stepIdx++)
                         {
-                            <div class="col">
-                                <div class="card h-100 shadow-sm border-0 border-start border-success border-4">
-                                    <div class="card-body">
-                                        <span class="badge bg-success mb-2">@p.Category</span>
-                                        <h6 class="card-title fw-bold text-dark">@p.Viewpoint</h6>
-                                        <p class="card-text text-muted small mt-2">@p.Description</p>
+                            var child = children[stepIdx];
+                            var stepNum = stepIdx + 1;
+                            <div class="border rounded p-2 bg-white">
+                                <div class="d-flex justify-content-between align-items-center gap-2">
+                                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                                        <span class="badge bg-dark">Step @stepNum</span>
+                                        <span class="fw-semibold small">[@child.Id] @child.Title</span>
+                                        <span class="badge bg-light text-dark border">@child.EarsPattern</span>
+                                        @if (child.Behavior is not null)
+                                        {
+                                            <span class="badge bg-info-subtle text-info-emphasis">@child.Behavior.Kind</span>
+                                        }
                                     </div>
+                                    <div class="d-flex align-items-center gap-1 flex-shrink-0">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1"
+                                                disabled="@(stepIdx == 0)"
+                                                title="上へ移動"
+                                                @onclick="() => Workspace.MoveChildRequirement(selected.Id, child.Id, -1)">
+                                            ↑
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1"
+                                                disabled="@(stepIdx == children.Count - 1)"
+                                                title="下へ移動"
+                                                @onclick="() => Workspace.MoveChildRequirement(selected.Id, child.Id, 1)">
+                                            ↓
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2"
+                                                @onclick="() => Workspace.SelectRequirement(child.Id)">
+                                            編集 →
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="small text-muted mt-1 ps-1">
+                                    @Workspace.RenderJapanesePreview(child)
                                 </div>
                             </div>
                         }
                     </div>
-                </div>
+                }
             </div>
-        </div>
-    </div>
-}
-
-<style>
-    .custom-usdm-table th { font-size: 0.9rem; background-color: #f8f9fa; vertical-align: middle; }
-    .table-primary-subtle { background-color: #e7f1ff; }
-    .table-secondary-subtle { background-color: #f1f3f5; }
-    .ears-box { background: #fdfdfe; border-left: 4px solid #0d6efd; padding: 4px 8px; border-radius: 4px; }
-</style>
-
-@code {
-    private bool _isRunning = false;
-    private PipelineContext? _context;
-    private List<RequirementNode> _nodes = new();
-    private string _reqPath = "";
-    
-    // CRUD モーダル用
-    private bool _showModal = false;
-    private bool _isNewNode = false;
-    private RequirementNode _formData = new RequirementNode();
-
-    // QA分析用ステート
-    private bool _isQaRunning = false;
-    private Guid? _targetQaNodeId = null;
-    private bool _showQaModal = false;
-    private RequirementNode? _qaTargetNode;
-    private List<QaPerspective> _qaPerspectives = new();
-
-    protected override void OnInitialized()
-    {
-        _reqPath = Path.Combine(Directory.GetCurrentDirectory(), "requirements.json");
-        LoadData();
-    }
-
-    private void LoadData()
-    {
-        _nodes = Provider.Load(_reqPath).ToList();
-        _nodes = SortTree(_nodes);
-    }
-
-    private async Task RunPipeline()
-    {
-        _isRunning = true;
-        try {
-            var currentDir = Directory.GetCurrentDirectory();
-            
-            // 💡 修正：プレースホルダーを実際のパスに書き換え！
-            var reqPath = Path.Combine(currentDir, "requirements.json");
-            var glosPath = Path.Combine(currentDir, "glossary.json");
-            
-            var loadedNodes = ReqProvider.Load(reqPath);
-            var loadedGlossary = GlosProvider.Load(glosPath);
-
-            // 読み込んだデータでコンテキストを作り、Orchestratorに渡す
-            _context = new PipelineContext(loadedNodes, loadedGlossary);
-            await Orchestrator.RunPipelineAsync(_context);
-
-            _nodes = SortTree(_context.Nodes.ToList());
-        } finally {
-            _isRunning = false;
-        }
-    }
-
-    // ===== QA観点分析の実行 =====
-    private async Task AnalyzeQaPerspectives(RequirementNode node)
-    {
-        _isQaRunning = true;
-        _targetQaNodeId = node.Id;
-        _qaTargetNode = node;
-        StateHasChanged(); // UIにスピナーを表示
-
-        try
-        {
-            var glossaryPath = Path.Combine(Directory.GetCurrentDirectory(), "glossary.json");
-            var glossary = GlossaryProvider.Load(glossaryPath);
-            _qaPerspectives = await QaGenerator.GeneratePerspectivesAsync(node, glossary);
-            _showQaModal = true;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"QA分析エラー: {ex.Message}");
-        }
-        finally
-        {
-            _isQaRunning = false;
-            _targetQaNodeId = null;
-            StateHasChanged();
-        }
-    }
-
-    private void CloseQaModal() => _showQaModal = false;
-
-    // ===== 既存のモーダル操作ロジック =====
-    private void OpenModal(RequirementNode? existingNode, Guid? parentId = null)
-    {
-        _isNewNode = existingNode == null;
-        if (_isNewNode)
-        {
-            _formData = new RequirementNode
-            {
-                Id = Guid.NewGuid(),
-                ParentId = parentId,
-                Type = parentId == null ? UsdmType.ParentRequirement : UsdmType.Specification,
-                Description = "",
-                GherkinContext = new GherkinContext(),
-                EarsContext = new EarsContext()
-            };
         }
         else
         {
-            _formData = new RequirementNode
+            <!-- ATOMIC REQUIREMENT EDITOR -->
+            var pendingEscape = Workspace.GetPendingEscape(selected.Id);
+            var isEscapeMode = selected.Behavior is null && pendingEscape is not null;
+
+            <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-success">Atomic (子要求)</span>
+                    <span class="fw-bold font-monospace">@selected.Id</span>
+                    @if (!string.IsNullOrWhiteSpace(selected.ParentRequirementId))
+                    {
+                        <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none"
+                                @onclick="() => Workspace.SelectRequirement(selected.ParentRequirementId)">
+                            親: @selected.ParentRequirementId
+                        </button>
+                    }
+                </div>
+                <div class="d-flex gap-2">
+                    @if (!isEscapeMode)
+                    {
+                        <button type="button" class="btn btn-sm btn-outline-warning text-dark"
+                                @onclick="() => ActivateEscapeHatch(selected)">
+                            自由記述（Escape）へ退避
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-sm btn-outline-success"
+                                @onclick="() => Workspace.ReturnToStructuredSlot(selected)">
+                            構造化スロットへ戻る
+                        </button>
+                    }
+                    <button type="button" class="btn btn-sm btn-outline-danger"
+                            @onclick="() => Workspace.DeleteRequirement(selected.Id)">
+                        削除
+                    </button>
+                </div>
+            </div>
+
+            <!-- Basic Metadata -->
+            <div class="slot-card">
+                <div class="row g-2">
+                    <div class="col-md-8">
+                        <label class="slot-label">タイトル</label>
+                        <input type="text" class="form-control form-control-sm"
+                               value="@selected.Title"
+                               @oninput="e => { selected.Title = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="slot-label">Namespace</label>
+                        <input type="text" class="form-control form-control-sm" placeholder="例: customer.crud"
+                               value="@selected.Namespace"
+                               @oninput="e => { selected.Namespace = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }" />
+                    </div>
+                </div>
+            </div>
+
+            @if (isEscapeMode && pendingEscape is not null)
             {
-                Id = existingNode!.Id,
-                ParentId = existingNode.ParentId,
-                Type = existingNode.Type,
-                Description = existingNode.Description,
-                GherkinContext = existingNode.GherkinContext ?? new GherkinContext(),
-                EarsContext = existingNode.EarsContext ?? new EarsContext()
-            };
+                <div class="escape-box mb-3">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span class="fw-bold text-warning-emphasis">Escape Hatch (自由記述レコード: @pendingEscape.Id)</span>
+                        <span class="chip-badge chip-warn">PENDING (LINT-007 承認待ち)</span>
+                    </div>
+                    <p class="small text-muted mb-3">
+                        構造化スロットで表現できない要件を一時退避しています。承認ゲートで `LINT-007` 警告が表示されます。
+                    </p>
+                    <div class="mb-3">
+                        <label class="slot-label">退避理由 (EscapeReason)</label>
+                        <select class="form-select form-select-sm"
+                                value="@pendingEscape.Reason"
+                                @onchange="e => OnEscapeReasonChanged(pendingEscape, e.Value?.ToString())">
+                            @foreach (var reason in Enum.GetValues<EscapeReason>())
+                            {
+                                <option value="@reason">@FormatEscapeReason(reason)</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label class="slot-label">自由記述テキスト</label>
+                        <textarea class="form-control form-control-sm" rows="3"
+                                  placeholder="例: API応答は99パーセンタイルで200ms以内であること。"
+                                  value="@pendingEscape.FreeText"
+                                  @oninput="e => { pendingEscape.FreeText = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }"></textarea>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- EARS 5-PATTERN SELECTOR -->
+                <div class="slot-card">
+                    <label class="slot-label">1. EARS パターン選択 (入口)</label>
+                    <div class="chip-group">
+                        @foreach (var pattern in Enum.GetValues<EarsEntryPattern>())
+                        {
+                            <button type="button"
+                                    class="slot-chip @(selected.EarsPattern == pattern ? "active" : "")"
+                                    @onclick="() => SelectEarsPattern(selected, pattern)">
+                                @FormatEarsLabel(pattern)
+                            </button>
+                        }
+                    </div>
+                </div>
+
+                <!-- CONTEXT / PRECONDITIONS SLOT -->
+                @if (ShowsPreconditions(selected.EarsPattern))
+                {
+                    <div class="slot-card">
+                        <div class="slot-card-header">
+                            <span class="slot-label mb-0">
+                                2. 前提条件・状態 (Preconditions)
+                                <span class="slot-type-hint">StateVariable / LifecycleState</span>
+                            </span>
+                            <button type="button" class="btn btn-sm btn-outline-primary py-0"
+                                    @onclick="() => AddPrecondition(selected)">
+                                + 条件追加
+                            </button>
+                        </div>
+
+                        @{
+                            var stateTerms = Workspace.GetGlossaryByTypes(ConceptType.StateVariable, ConceptType.LifecycleState);
+                        }
+
+                        @if (selected.Preconditions.Count == 0)
+                        {
+                            <div class="small text-muted">前提条件はありません（任意または必要に応じて「+ 条件追加」）。</div>
+                        }
+                        else
+                        {
+                            @for (var i = 0; i < selected.Preconditions.Count; i++)
+                            {
+                                var idx = i;
+                                var clause = selected.Preconditions[idx];
+                                var allowedVals = Workspace.GetAllowedValues(clause.StateTermRef);
+
+                                <div class="border rounded p-2 mb-2 bg-light">
+                                    <div class="row g-2 align-items-center mb-2">
+                                        <div class="col-md-6">
+                                            <select class="form-select form-select-sm"
+                                                    value="@clause.StateTermRef"
+                                                    @onchange="e => OnPreconditionStateChanged(clause, e.Value?.ToString())">
+                                                <option value="">-- 状態語彙を選択 --</option>
+                                                @foreach (var st in stateTerms)
+                                                {
+                                                    <option value="@st.Id">@st.CanonicalName (@st.ConceptType)</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <select class="form-select form-select-sm"
+                                                    value="@clause.Operator"
+                                                    @onchange="e => OnPreconditionOperatorChanged(clause, e.Value?.ToString())">
+                                                @foreach (var op in Enum.GetValues<ComparisonOperator>())
+                                                {
+                                                    <option value="@op">@op</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="col-md-2 text-end">
+                                            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2"
+                                                    @onclick="() => { selected.Preconditions.RemoveAt(idx); Workspace.NotifyChanged(); }">
+                                                ×
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <span class="small text-muted d-block mb-1">許容値 (LogicalType閉包):</span>
+                                        @if (allowedVals.Count == 0)
+                                        {
+                                            <span class="small text-danger">選択した語彙に Boolean / Enum 定義がありません (LINT-003)</span>
+                                        }
+                                        else
+                                        {
+                                            <div class="chip-group">
+                                                @foreach (var val in allowedVals)
+                                                {
+                                                    var activeVal = clause.ExpectedValues.Contains(val, StringComparer.Ordinal);
+                                                    <button type="button"
+                                                            class="slot-chip slot-chip-value @(activeVal ? "active" : "")"
+                                                            @onclick="() => ToggleExpectedValue(clause, val)">
+                                                        @val
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+
+                <!-- ACTOR & TRIGGER SLOT -->
+                @if (ShowsTrigger(selected.EarsPattern))
+                {
+                    <div class="slot-card">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="slot-label">
+                                    アクター (ActorRef)
+                                    <span class="slot-type-hint">Actor</span>
+                                </label>
+                                <select class="form-select form-select-sm"
+                                        value="@(selected.ActorRef ?? "")"
+                                        @onchange="e => { selected.ActorRef = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
+                                    <option value="">-- 指定なし --</option>
+                                    @foreach (var actor in Workspace.GetGlossaryByTypes(ConceptType.Actor))
+                                    {
+                                        <option value="@actor.Id">@actor.CanonicalName (@actor.Id)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="slot-label">
+                                    トリガーイベント (TriggerEventRef)
+                                    <span class="slot-type-hint">Event</span>
+                                </label>
+                                <select class="form-select form-select-sm"
+                                        value="@(selected.TriggerEventRef ?? "")"
+                                        @onchange="e => { selected.TriggerEventRef = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
+                                    <option value="">-- イベントを選択 --</option>
+                                    @foreach (var evt in Workspace.GetGlossaryByTypes(ConceptType.Event))
+                                    {
+                                        <option value="@evt.Id">@evt.CanonicalName (@evt.Id)</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <!-- SUBJECT & TIMING SLOT -->
+                <div class="slot-card">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-6">
+                            <label class="slot-label">
+                                主語システム (SubjectSystemRef)
+                                <span class="slot-type-hint">System</span>
+                            </label>
+                            <select class="form-select form-select-sm"
+                                    value="@(selected.SubjectSystemRef ?? "")"
+                                    @onchange="e => { selected.SubjectSystemRef = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
+                                <option value="">-- システムを選択 --</option>
+                                @foreach (var sys in Workspace.GetGlossaryByTypes(ConceptType.System))
+                                {
+                                    <option value="@sys.Id">@sys.CanonicalName (@sys.Id)</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="slot-label">タイミング (Timing)</label>
+                            <div class="chip-group">
+                                @foreach (var timing in Enum.GetValues<TimingKind>())
+                                {
+                                    var isTimingActive = selected.Behavior?.Timing == timing;
+                                    <button type="button"
+                                            class="slot-chip @(isTimingActive ? "active" : "")"
+                                            @onclick="() => SetTiming(selected, timing)">
+                                        @FormatTimingLabel(timing)
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BEHAVIOR SLOT -->
+                <div class="slot-card">
+                    <div class="slot-card-header">
+                        <span class="slot-label mb-0">動作 (Behavior)</span>
+                        @if (selected.Behavior is null)
+                        {
+                            <button type="button" class="btn btn-sm btn-primary py-0" @onclick="() => InitializeBehavior(selected)">
+                                Behavior を追加
+                            </button>
+                        }
+                    </div>
+
+                    @if (selected.Behavior is null)
+                    {
+                        <div class="text-danger small">
+                            Behavior が未設定です（LINT-004）。Behavior を追加するか Escape Hatch へ退避してください。
+                        </div>
+                    }
+                    else
+                    {
+                        var behavior = selected.Behavior;
+                        var targetCandidates = GetTargetTermsForBehavior(behavior.Kind);
+                        var targetAllowedValues = Workspace.GetAllowedValues(behavior.TargetTermRef);
+
+                        <div class="mb-3">
+                            <label class="slot-label">BehaviorKind (6種)</label>
+                            <div class="chip-group">
+                                @foreach (var kind in Enum.GetValues<BehaviorKind>())
+                                {
+                                    <button type="button"
+                                            class="slot-chip @(behavior.Kind == kind ? "active" : "")"
+                                            @onclick="() => OnBehaviorKindChanged(behavior, kind)">
+                                        @kind
+                                    </button>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="slot-label">
+                                    対象語彙 (TargetTermRef)
+                                    <span class="slot-type-hint">@GetTargetTypeHint(behavior.Kind)</span>
+                                </label>
+                                <select class="form-select form-select-sm"
+                                        value="@behavior.TargetTermRef"
+                                        @onchange="e => OnBehaviorTargetChanged(behavior, e.Value?.ToString())">
+                                    <option value="">-- 対象を選択 --</option>
+                                    @foreach (var term in targetCandidates)
+                                    {
+                                        <option value="@term.Id">@term.CanonicalName (@term.ConceptType)</option>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(behavior.TargetTermRef)
+                                        && !targetCandidates.Any(t => t.Id == behavior.TargetTermRef))
+                                    {
+                                        var current = Workspace.Document.Glossary.FirstOrDefault(t => t.Id == behavior.TargetTermRef);
+                                        <option value="@behavior.TargetTermRef">
+                                            ⚠ @(current is not null ? $"{current.CanonicalName} ({current.ConceptType})" : behavior.TargetTermRef)
+                                        </option>
+                                    }
+                                </select>
+                            </div>
+
+                            @if (behavior.Kind == BehaviorKind.TRANSITION)
+                            {
+                                <div class="col-md-3">
+                                    <label class="slot-label">FromValue</label>
+                                    <select class="form-select form-select-sm"
+                                            value="@(behavior.FromValue ?? "")"
+                                            @onchange="e => { behavior.FromValue = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
+                                        <option value="">-- 未選択 --</option>
+                                        @foreach (var val in targetAllowedValues)
+                                        {
+                                            <option value="@val">@val</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="slot-label">ToValue</label>
+                                    <select class="form-select form-select-sm"
+                                            value="@(behavior.ToValue ?? "")"
+                                            @onchange="e => { behavior.ToValue = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
+                                        <option value="">-- 未選択 --</option>
+                                        @foreach (var val in targetAllowedValues)
+                                        {
+                                            <option value="@val">@val</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
+                            else if (behavior.Kind == BehaviorKind.SET)
+                            {
+                                <div class="col-md-6">
+                                    <label class="slot-label">SetValue</label>
+                                    <select class="form-select form-select-sm"
+                                            value="@(behavior.SetValue ?? "")"
+                                            @onchange="e => { behavior.SetValue = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
+                                        <option value="">-- 未選択 --</option>
+                                        @foreach (var val in targetAllowedValues)
+                                        {
+                                            <option value="@val">@val</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
+                            else if (behavior.Kind == BehaviorKind.PROHIBIT)
+                            {
+                                <div class="col-md-6">
+                                    <label class="slot-label">禁止する操作 (ProhibitedAction)</label>
+                                    <select class="form-select form-select-sm"
+                                            value="@(behavior.ProhibitedAction?.ToString() ?? "")"
+                                            @onchange="e => OnProhibitedActionChanged(behavior, e.Value?.ToString())">
+                                        <option value="">-- 操作全般を禁止 --</option>
+                                        @foreach (var action in new[] { BehaviorKind.CREATE, BehaviorKind.SET, BehaviorKind.DELETE, BehaviorKind.TRANSITION, BehaviorKind.DISPLAY })
+                                        {
+                                            <option value="@action">@action</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
         }
-        _showModal = true;
-    }
+    </section>
 
-    private void CloseModal() => _showModal = false;
+    <!-- ==================== RIGHT PANE: PREVIEW & LINT ==================== -->
+    <aside class="wb-pane wb-pane-right">
+        <div class="wb-section-title">Japanese Real-Time Preview</div>
 
-    private async Task SaveModal()
-    {
-        if (_formData.Type != UsdmType.ChildRequirement) _formData.GherkinContext = null;
-        if (_formData.Type != UsdmType.Specification) _formData.EarsContext = null;
+        @if (selectedRationale is not null)
+        {
+            <div class="preview-box">
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                    <span class="badge bg-secondary">Rationale (理由)</span>
+                    <span class="small text-muted font-monospace">@selectedRationale.Id</span>
+                </div>
+                <div class="fw-bold small mt-1">@selectedRationale.Title</div>
+                <p class="small text-dark mt-2 mb-0">
+                    @(string.IsNullOrWhiteSpace(selectedRationale.Description) ? "（理由本文が未入力です）" : selectedRationale.Description)
+                </p>
+            </div>
+        }
+        else if (selected is null)
+        {
+            <div class="preview-box text-muted small">要求を選択するとリアルタイム日本語プレビューが表示されます。</div>
+        }
+        else if (selected.NodeKind == RequirementNodeKind.Atomic)
+        {
+            <div class="preview-box">
+                <div class="d-flex align-items-center justify-content-between">
+                    <span class="badge bg-primary">@selected.EarsPattern</span>
+                    <span class="small text-muted font-monospace">@selected.Id</span>
+                </div>
+                <p class="preview-sentence" data-testid="japanese-preview">
+                    @Workspace.RenderJapanesePreview(selected)
+                </p>
+            </div>
+        }
+        else
+        {
+            var childAtomics = Workspace.Document.Requirements
+                .Where(c => c.ParentRequirementId == selected.Id && c.NodeKind == RequirementNodeKind.Atomic)
+                .ToList();
+            <div class="preview-box">
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                    <span class="badge bg-primary">Composite (親要求)</span>
+                    <span class="small text-muted font-monospace">@selected.Id</span>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(selected.Summary))
+                {
+                    <p class="preview-sentence mb-3">@selected.Summary</p>
+                }
+                else
+                {
+                    <p class="small text-muted mb-3">（親要求の文章が未入力です）</p>
+                }
 
-        if (_isNewNode) {
-            _nodes.Add(_formData);
-        } else {
-            var index = _nodes.FindIndex(n => n.Id == _formData.Id);
-            if (index >= 0) _nodes[index] = _formData;
+                <div class="small fw-bold text-primary mb-2">連続した振る舞いフロー (@childAtomics.Count ステップ)</div>
+                @if (childAtomics.Count == 0)
+                {
+                    <div class="small text-danger">未分解（子要求が0件のため LINT-004 エラー）</div>
+                }
+                else
+                {
+                    <ol class="ps-3 mb-0 small">
+                        @foreach (var c in childAtomics)
+                        {
+                            <li class="mb-2">
+                                <strong>[@c.Id]</strong> @Workspace.RenderJapanesePreview(c)
+                            </li>
+                        }
+                    </ol>
+                }
+            </div>
         }
 
-        Provider.Save(_nodes, _reqPath);
-        CloseModal();
-        LoadData();
-        await RunPipeline();
-    }
+        <div class="d-flex align-items-center justify-content-between mt-2 mb-2">
+            <div class="wb-section-title mb-0">GraphLinter Diagnostics</div>
+            <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn @(!_showAllDiagnostics ? "btn-dark" : "btn-outline-secondary")"
+                        @onclick="() => _showAllDiagnostics = false">
+                    選択中 (@(selected is null ? 0 : Workspace.GetDiagnosticsForRequirement(selected.Id).Count))
+                </button>
+                <button type="button" class="btn @(_showAllDiagnostics ? "btn-dark" : "btn-outline-secondary")"
+                        @onclick="() => _showAllDiagnostics = true">
+                    全体 (@Workspace.Diagnostics.Count)
+                </button>
+            </div>
+        </div>
 
-    private async Task DeleteNode(RequirementNode node)
-    {
-        _nodes.RemoveAll(n => n.Id == node.Id);
-        Provider.Save(_nodes, _reqPath);
-        LoadData();
-        await RunPipeline();
-    }
-
-    private int GetLevel(RequirementNode node) {
-        int level = 0;
-        var current = node;
-        while (current?.ParentId != null) {
-            level++;
-            current = _nodes.FirstOrDefault(n => n.Id == current.ParentId);
+        @{
+            var visibleDiagnostics = _showAllDiagnostics || selected is null
+                ? Workspace.Diagnostics
+                : Workspace.GetDiagnosticsForRequirement(selected.Id);
         }
-        return level;
-    }
 
-    private List<RequirementNode> SortTree(List<RequirementNode> allNodes)
+        @if (visibleDiagnostics.Count == 0)
+        {
+            <div class="alert alert-success py-2 px-3 small mb-0">
+                ✓ Lint エラー・警告はありません。
+            </div>
+        }
+        else
+        {
+            @foreach (var diag in visibleDiagnostics)
+            {
+                var isErr = diag.Severity == LintSeverity.Error;
+                <div class="lint-item @(isErr ? "lint-item-error" : "lint-item-warn")">
+                    <div class="d-flex align-items-center justify-content-between mb-1">
+                        <span class="fw-bold">
+                            [@diag.RuleId] @(isErr ? "Error" : "Warning")
+                        </span>
+                        <button type="button" class="lint-target-btn small font-monospace"
+                                @onclick="() => JumpToTarget(diag.TargetId)">
+                            @diag.TargetId
+                        </button>
+                    </div>
+                    <div>@diag.Message</div>
+                </div>
+            }
+        }
+    </aside>
+</div>
+
+@code {
+    private bool _showAllDiagnostics;
+
+    protected override void OnInitialized()
     {
-        var result = new List<RequirementNode>();
-        var rootNodes = allNodes.Where(n => n.ParentId == null).ToList();
-        foreach (var root in rootNodes) AddNodeAndChildren(root, allNodes, result);
-        return result;
+        Workspace.OnChange += HandleChanged;
     }
 
-    private void AddNodeAndChildren(RequirementNode node, List<RequirementNode> allNodes, List<RequirementNode> result)
+    private void HandleChanged()
     {
-        result.Add(node);
-        var children = allNodes.Where(n => n.ParentId == node.Id).ToList();
-        foreach (var child in children) AddNodeAndChildren(child, allNodes, result);
+        InvokeAsync(StateHasChanged);
     }
 
-    private string GetBadgeClass(UsdmType type) => type switch {
-        UsdmType.ParentRequirement => "bg-primary",
-        UsdmType.Rationale => "bg-secondary",
-        UsdmType.ChildRequirement => "bg-info text-dark",
-        UsdmType.Specification => "bg-light text-dark border",
-        _ => "bg-secondary"
+    private RenderFragment RenderTreeNode(CanonicalRequirementNode node, bool isChild) => __builder =>
+    {
+        var isSelected = string.Equals(Workspace.SelectedRequirementId, node.Id, StringComparison.Ordinal);
+        var diags = Workspace.GetDiagnosticsForRequirement(node.Id);
+        var errs = diags.Count(d => d.Severity == LintSeverity.Error);
+        var warns = diags.Count(d => d.Severity == LintSeverity.Warning);
+
+        <button type="button"
+                class="tree-node-btn @(isChild ? "tree-node-atomic" : "tree-node-composite") @(isSelected ? "selected" : "")"
+                @onclick="() => Workspace.SelectRequirement(node.Id)">
+            <span class="tree-node-label" title="@($"[{node.Id}] {node.Title}")">
+                @(isChild ? "↳ " : "▸ ")[@node.Id] @node.Title
+            </span>
+            <span class="tree-badges">
+                @if (errs > 0)
+                {
+                    <span class="chip-badge chip-err">@errs</span>
+                }
+                @if (warns > 0)
+                {
+                    <span class="chip-badge chip-warn">@warns</span>
+                }
+            </span>
+        </button>
     };
+
+    private void ToggleRationaleRef(CanonicalRequirementNode node, string ratId)
+    {
+        if (node.RationaleRefs.Contains(ratId, StringComparer.Ordinal))
+        {
+            node.RationaleRefs.RemoveAll(r => string.Equals(r, ratId, StringComparison.Ordinal));
+        }
+        else
+        {
+            node.RationaleRefs.Add(ratId);
+        }
+
+        Workspace.NotifyChanged();
+    }
+
+    private void SelectEarsPattern(CanonicalRequirementNode node, EarsEntryPattern pattern)
+    {
+        node.EarsPattern = pattern;
+
+        if (!ShowsTrigger(pattern))
+        {
+            node.TriggerEventRef = null;
+            node.ActorRef = null;
+        }
+
+        if (!ShowsPreconditions(pattern))
+        {
+            node.Preconditions.Clear();
+        }
+
+        Workspace.NotifyChanged();
+    }
+
+    private static bool ShowsPreconditions(EarsEntryPattern pattern) =>
+        pattern is EarsEntryPattern.EventDriven
+            or EarsEntryPattern.StateDriven
+            or EarsEntryPattern.UnwantedBehavior
+            or EarsEntryPattern.OptionalFeature;
+
+    private static bool ShowsTrigger(EarsEntryPattern pattern) =>
+        pattern is EarsEntryPattern.EventDriven
+            or EarsEntryPattern.UnwantedBehavior
+            or EarsEntryPattern.OptionalFeature;
+
+    private void AddPrecondition(CanonicalRequirementNode node)
+    {
+        var firstState = Workspace.GetGlossaryByTypes(ConceptType.StateVariable, ConceptType.LifecycleState).FirstOrDefault();
+        var allowed = firstState is not null ? Workspace.GetAllowedValues(firstState.Id) : [];
+
+        node.Preconditions.Add(new PreconditionClause
+        {
+            StateTermRef = firstState?.Id ?? string.Empty,
+            Operator = ComparisonOperator.EQ,
+            ExpectedValues = allowed.Count > 0 ? [allowed[0]] : []
+        });
+        Workspace.NotifyChanged();
+    }
+
+    private void OnPreconditionStateChanged(PreconditionClause clause, string? newStateRef)
+    {
+        clause.StateTermRef = newStateRef ?? string.Empty;
+        var allowed = Workspace.GetAllowedValues(clause.StateTermRef);
+        clause.ExpectedValues = allowed.Count > 0 ? [allowed[0]] : [];
+        Workspace.NotifyChanged();
+    }
+
+    private void OnPreconditionOperatorChanged(PreconditionClause clause, string? opStr)
+    {
+        if (Enum.TryParse<ComparisonOperator>(opStr, out var op))
+        {
+            clause.Operator = op;
+            if (op != ComparisonOperator.IN && clause.ExpectedValues.Count > 1)
+            {
+                clause.ExpectedValues = [clause.ExpectedValues[0]];
+            }
+            Workspace.NotifyChanged();
+        }
+    }
+
+    private void ToggleExpectedValue(PreconditionClause clause, string val)
+    {
+        if (clause.Operator == ComparisonOperator.IN)
+        {
+            if (clause.ExpectedValues.Contains(val, StringComparer.Ordinal))
+            {
+                clause.ExpectedValues.RemoveAll(v => string.Equals(v, val, StringComparison.Ordinal));
+            }
+            else
+            {
+                clause.ExpectedValues.Add(val);
+            }
+        }
+        else
+        {
+            clause.ExpectedValues = [val];
+        }
+
+        Workspace.NotifyChanged();
+    }
+
+    private void SetTiming(CanonicalRequirementNode node, TimingKind timing)
+    {
+        node.Behavior ??= new BehaviorNode { Kind = BehaviorKind.DISPLAY };
+        node.Behavior.Timing = timing;
+        Workspace.NotifyChanged();
+    }
+
+    private void InitializeBehavior(CanonicalRequirementNode node)
+    {
+        var defaultObj = Workspace.GetGlossaryByTypes(ConceptType.DomainObject).FirstOrDefault()?.Id ?? string.Empty;
+        node.Behavior = new BehaviorNode
+        {
+            Kind = BehaviorKind.DISPLAY,
+            TargetTermRef = defaultObj,
+            Timing = TimingKind.UNSPECIFIED
+        };
+        Workspace.NotifyChanged();
+    }
+
+    private void OnBehaviorKindChanged(BehaviorNode behavior, BehaviorKind kind)
+    {
+        behavior.Kind = kind;
+        behavior.FromValue = null;
+        behavior.ToValue = null;
+        behavior.SetValue = null;
+        behavior.ProhibitedAction = kind == BehaviorKind.PROHIBIT ? BehaviorKind.DELETE : null;
+
+        var candidates = GetTargetTermsForBehavior(kind);
+        if (!candidates.Any(c => string.Equals(c.Id, behavior.TargetTermRef, StringComparison.Ordinal)))
+        {
+            behavior.TargetTermRef = candidates.FirstOrDefault()?.Id ?? string.Empty;
+        }
+
+        var allowed = Workspace.GetAllowedValues(behavior.TargetTermRef);
+        if (kind == BehaviorKind.TRANSITION && allowed.Count >= 2)
+        {
+            behavior.FromValue = allowed[0];
+            behavior.ToValue = allowed[1];
+        }
+        else if (kind == BehaviorKind.SET && allowed.Count >= 1)
+        {
+            behavior.SetValue = allowed[0];
+        }
+
+        Workspace.NotifyChanged();
+    }
+
+    private void OnBehaviorTargetChanged(BehaviorNode behavior, string? targetRef)
+    {
+        behavior.TargetTermRef = targetRef ?? string.Empty;
+        behavior.FromValue = null;
+        behavior.ToValue = null;
+        behavior.SetValue = null;
+
+        var allowed = Workspace.GetAllowedValues(behavior.TargetTermRef);
+        if (behavior.Kind == BehaviorKind.TRANSITION && allowed.Count >= 2)
+        {
+            behavior.FromValue = allowed[0];
+            behavior.ToValue = allowed[1];
+        }
+        else if (behavior.Kind == BehaviorKind.SET && allowed.Count >= 1)
+        {
+            behavior.SetValue = allowed[0];
+        }
+
+        Workspace.NotifyChanged();
+    }
+
+    private void OnProhibitedActionChanged(BehaviorNode behavior, string? actionStr)
+    {
+        if (Enum.TryParse<BehaviorKind>(actionStr, out var parsed))
+        {
+            behavior.ProhibitedAction = parsed;
+        }
+        else
+        {
+            behavior.ProhibitedAction = null;
+        }
+        Workspace.NotifyChanged();
+    }
+
+    private IReadOnlyList<ApprovedGlossaryTerm> GetTargetTermsForBehavior(BehaviorKind kind) => kind switch
+    {
+        BehaviorKind.CREATE or BehaviorKind.DELETE => Workspace.GetGlossaryByTypes(ConceptType.DomainObject),
+        BehaviorKind.TRANSITION => Workspace.GetGlossaryByTypes(ConceptType.LifecycleState, ConceptType.StateVariable),
+        BehaviorKind.SET => Workspace.GetGlossaryByTypes(ConceptType.StateVariable, ConceptType.LifecycleState, ConceptType.Attribute),
+        _ => Workspace.GetGlossaryByTypes(ConceptType.DomainObject, ConceptType.Attribute, ConceptType.LifecycleState, ConceptType.StateVariable)
+    };
+
+    private static string GetTargetTypeHint(BehaviorKind kind) => kind switch
+    {
+        BehaviorKind.CREATE or BehaviorKind.DELETE => "DomainObject",
+        BehaviorKind.TRANSITION => "LifecycleState / StateVariable",
+        BehaviorKind.SET => "StateVariable / LifecycleState / Attribute",
+        _ => "DomainObject / Attribute / State"
+    };
+
+    private void ActivateEscapeHatch(CanonicalRequirementNode node)
+    {
+        Workspace.EnableEscapeHatch(node, EscapeReason.ComplexTemporalConstraint, string.Empty);
+    }
+
+    private void OnEscapeReasonChanged(FreeTextEscapeRecord record, string? reasonStr)
+    {
+        if (Enum.TryParse<EscapeReason>(reasonStr, out var reason))
+        {
+            record.Reason = reason;
+            Workspace.NotifyChanged();
+        }
+    }
+
+    private void JumpToTarget(string targetId)
+    {
+        if (Workspace.Document.Requirements.Any(r => r.Id == targetId))
+        {
+            Workspace.SelectRequirement(targetId);
+            return;
+        }
+
+        var escape = Workspace.Document.EscapeRecords.FirstOrDefault(e => e.Id == targetId);
+        if (escape is not null && Workspace.Document.Requirements.Any(r => r.Id == escape.RequirementId))
+        {
+            Workspace.SelectRequirement(escape.RequirementId);
+        }
+    }
+
+    private static string FormatEarsLabel(EarsEntryPattern p) => p switch
+    {
+        EarsEntryPattern.Ubiquitous => "Ubiquitous (普遍)",
+        EarsEntryPattern.EventDriven => "EventDriven (イベント)",
+        EarsEntryPattern.StateDriven => "StateDriven (状態)",
+        EarsEntryPattern.UnwantedBehavior => "Unwanted (異常・禁止)",
+        EarsEntryPattern.OptionalFeature => "Optional (オプション)",
+        _ => p.ToString()
+    };
+
+    private static string FormatTimingLabel(TimingKind t) => t switch
+    {
+        TimingKind.UNSPECIFIED => "指定なし",
+        TimingKind.IMMEDIATE => "即座に (IMMEDIATE)",
+        TimingKind.EVENTUAL => "最終的に (EVENTUAL)",
+        _ => t.ToString()
+    };
+
+    private static string FormatEscapeReason(EscapeReason r) => r switch
+    {
+        EscapeReason.UnsupportedEarsPattern => "UnsupportedEarsPattern (EARS表現不可)",
+        EscapeReason.UnsupportedBehaviorKind => "UnsupportedBehaviorKind (Behavior表現不可)",
+        EscapeReason.ComplexTemporalConstraint => "ComplexTemporalConstraint (複雑な時間・SLA制約)",
+        EscapeReason.MissingDomainVocabulary => "MissingDomainVocabulary (語彙不足)",
+        EscapeReason.QuantitativeCalculation => "QuantitativeCalculation (数値計算・数式)",
+        EscapeReason.ExternalSystemConstraint => "ExternalSystemConstraint (外部システム・法規制制約)",
+        _ => r.ToString()
+    };
+
+    private static string? EmptyToNull(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+
+    public void Dispose()
+    {
+        Workspace.OnChange -= HandleChanged;
+    }
 }
