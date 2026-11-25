@@ -141,6 +141,30 @@ public sealed class WorkspaceStateService
 
     public string ExportJson() => Document.ToJson();
 
+    public string ExportGlossaryJson() => GlossaryTransfer.ExportJson(Document.Glossary, Document.SchemaVersion);
+
+    public bool TryImportGlossaryJson(
+        string json,
+        GlossaryImportMode mode,
+        out GlossaryImportResult? result,
+        out string? error)
+    {
+        try
+        {
+            var importedTerms = GlossaryTransfer.ParseTermsFromJson(json);
+            result = GlossaryTransfer.ApplyImport(Document.Glossary, importedTerms, mode);
+            NotifyChanged();
+            error = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            result = null;
+            error = $"Glossary JSON の読み込みに失敗しました: {ex.Message}";
+            return false;
+        }
+    }
+
     public string RenderUsdmMarkdown() => UsdmMarkdownRenderer.Render(Document);
 
     public string RenderJapanesePreview(CanonicalRequirementNode node)

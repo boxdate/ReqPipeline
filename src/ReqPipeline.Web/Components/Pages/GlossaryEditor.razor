@@ -1,6 +1,7 @@
 @page "/glossary"
 @implements IDisposable
 @inject WorkspaceStateService Workspace
+@inject IJSRuntime JS
 
 <PageTitle>Glossary - ReqPipeline V2</PageTitle>
 
@@ -8,12 +9,36 @@
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
         <div>
             <h4 class="fw-bold mb-0">Glossary 管理 (承認済み語彙)</h4>
-            <div class="text-muted small">Workbench のスロット候補と LINT-001 / LINT-002 / LINT-003 の正本語彙を管理します。</div>
+            <div class="text-muted small">Workbench のスロット候補と LINT-001〜LINT-011 の正本語彙を管理します。</div>
         </div>
-        <button type="button" class="btn btn-primary btn-sm" @onclick="CreateNewTerm">
-            ＋ 新規語彙を追加
-        </button>
+        <div class="d-flex align-items-center flex-wrap gap-2">
+            <select class="form-select form-select-sm" style="width: auto;"
+                    @bind="_importMode" title="Glossary インポート時のマージ動作">
+                <option value="@GlossaryImportMode.MergeOverwrite">マージ (同ID上書き)</option>
+                <option value="@GlossaryImportMode.MergeSkipExisting">マージ (同IDスキップ)</option>
+                <option value="@GlossaryImportMode.ReplaceAll">全置換</option>
+            </select>
+            <label class="btn btn-outline-secondary btn-sm mb-0" style="cursor: pointer;" title="Glossary JSON をインポート">
+                ⬆ JSON インポート
+                <InputFile OnChange="HandleImportGlossaryJson" accept=".json,application/json" style="display:none" />
+            </label>
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="HandleExportGlossaryJson" title="現在の Glossary を JSON でエクスポート">
+                ⬇ JSON エクスポート
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" @onclick="CreateNewTerm">
+                ＋ 新規語彙を追加
+            </button>
+        </div>
     </div>
+
+    @if (!string.IsNullOrWhiteSpace(_transferMessage))
+    {
+        <div class="alert @(_transferIsError ? "alert-danger" : "alert-success") alert-dismissible fade show py-2 px-3 small mb-3" role="alert">
+            @_transferMessage
+            <button type="button" class="btn-close btn-close-sm" style="padding: 0.65rem 0.75rem;"
+                    @onclick="() => _transferMessage = null"></button>
+        </div>
+    }
 
     <div class="row g-3">
         <!-- Term List -->
@@ -287,6 +312,9 @@
     private string _newEnumValue = string.Empty;
     private string _newEnumLabel = string.Empty;
     private string _newDeprecatedLabel = string.Empty;
+    private GlossaryImportMode _importMode = GlossaryImportMode.MergeOverwrite;
+    private string? _transferMessage;
+    private bool _transferIsError;
 
     protected override void OnInitialized()
     {
@@ -476,6 +504,50 @@
     {
         term.DeprecatedLabels.Remove(label);
         Workspace.NotifyChanged();
+    }
+
+    private async Task HandleExportGlossaryJson()
+    {
+        var json = Workspace.ExportGlossaryJson();
+        var docId = string.IsNullOrWhiteSpace(Workspace.Document.DocumentId)
+            ? "glossary"
+            : $"glossary-{Workspace.Document.DocumentId.ToLowerInvariant()}";
+        var fileName = $"{docId}.v2.json";
+
+        await JS.InvokeVoidAsync("reqPipelineV2.downloadTextFile", fileName, json, "application/json;charset=utf-8");
+        _transferIsError = false;
+        _transferMessage = $"'{fileName}' をエクスポートしました（{Workspace.Document.Glossary.Count}件）。";
+    }
+
+    private async Task HandleImportGlossaryJson(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+            using var reader = new StreamReader(stream);
+            var json = await reader.ReadToEndAsync();
+
+            if (Workspace.TryImportGlossaryJson(json, _importMode, out var result, out var error) && result is not null)
+            {
+                _transferIsError = false;
+                _transferMessage = $"'{file.Name}' をインポートしました（追加: {result.AddedCount}件 / 更新: {result.UpdatedCount}件 / スキップ: {result.SkippedCount}件）。";
+                if (_selectedTermId is null || !Workspace.Document.Glossary.Any(t => t.Id == _selectedTermId))
+                {
+                    _selectedTermId = Workspace.Document.Glossary.FirstOrDefault()?.Id;
+                }
+            }
+            else
+            {
+                _transferIsError = true;
+                _transferMessage = error ?? "Glossary JSON のインポートに失敗しました。";
+            }
+        }
+        catch (Exception ex)
+        {
+            _transferIsError = true;
+            _transferMessage = $"ファイル読み込みエラー: {ex.Message}";
+        }
     }
 
     public void Dispose()
