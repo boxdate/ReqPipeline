@@ -4,9 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using ReqPipeline.Core.Application;
+using ReqPipeline.Core.Data;
 using ReqPipeline.Core.Infrastructure;
 using ReqPipeline.Core.Interfaces;
-using ReqPipeline.Core.KnowledgeBase;
 using ReqPipeline.Core.Models;
 using ReqPipeline.Core.StaticAnalysis;
 using ReqPipeline.Core.Export;
@@ -25,21 +25,30 @@ try
     var reqProvider = new JsonRequirementProvider();
     var glosProvider = new JsonGlossaryProvider();
     var llmClient = new OllamaLlmClient("qwen2.5:7b");
-    var knowledgeBase = new MarkdownKnowledgeBase("KnowledgeBase");
 
-    var orchestrator = new PipelineOrchestrator(
-        new StructureVerifier(),
-        new GlossaryVerifier(),
-        new SemanticValidator(llmClient, knowledgeBase));
+    // バリデーターのリスト（実行順序が重要！）
+    var validators = new List<IRequirementStaticAnalysis> 
+    { 
+        // --- Verification (機械的検証) ---
+        new StructureVerifier(), // NEW: USDM構造とEARS必須チェック
+        new GlossaryVerifier(),  // リネーム済: 用語と構文チェック
+        
+        // --- Validation (意味論的妥当性確認) ---
+        new SemanticValidator(llmClient) 
+    };
+    
+    // ... 以下略 ...
+    var exporters = new List<IRequirementExporter> { new KiroMarkdownExporter(), new UsdmCsvExporter() };
+
+    var orchestrator = new PipelineOrchestrator(reqProvider, glosProvider, validators, exporters);
 
     // ========================================================
     // 2. ユースケースの実行
+    // Webアプリ化する時は、コントローラーからこの1行を呼ぶだけになります！
     // ========================================================
     Console.WriteLine("🚀 パイプラインを実行中...\n");
-    var nodes = reqProvider.Load(args[0]);
-    var glossary = glosProvider.Load(args[1]);
-    var context = new PipelineContext(nodes, glossary);
-    await orchestrator.RunPipelineAsync(context);
+    var currentDir = Directory.GetCurrentDirectory(); 
+    var context = await orchestrator.RunPipelineAsync(args[0], args[1], currentDir);
 
     // ========================================================
     // 3. プレゼンテーション (UI表示)

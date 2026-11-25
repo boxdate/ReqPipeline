@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 
 <head>
     <meta charset="utf-8" />
@@ -11,14 +11,12 @@
     <link rel="stylesheet" href="@Assets["ReqPipeline.Web.styles.css"]" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
-    <HeadOutlet @rendermode="InteractiveServer" />
+    <HeadOutlet />
 </head>
 
 <body>
-    <Routes @rendermode="InteractiveServer" />
+    <Routes />
     <ReconnectModal />
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-    <script src="@Assets["js/v2-interop.js"]"></script>
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 
