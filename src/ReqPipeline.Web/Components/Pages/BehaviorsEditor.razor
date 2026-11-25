@@ -261,6 +261,10 @@
 
     private void HandleChanged()
     {
+        if (_selectedDefId is null || GetSelectedBehavior() is null)
+        {
+            _selectedDefId = Workspace.Document.BehaviorCatalog.FirstOrDefault()?.BehaviorDefId;
+        }
         InvokeAsync(StateHasChanged);
     }
 

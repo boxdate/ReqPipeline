@@ -6,13 +6,14 @@ namespace ReqPipeline.Web.Services;
 
 public sealed class WorkspaceStateService
 {
-    private readonly string? _samplePath;
+    private readonly string _contentRootPath;
 
     public KnowledgeGraphDocument Document { get; private set; } = new();
     public IReadOnlyList<LintDiagnostic> Diagnostics { get; private set; } = [];
     public string? SelectedRequirementId { get; private set; }
     public string? SelectedRationaleId { get; private set; }
     public string? LastErrorMessage { get; private set; }
+    public string ActiveSampleKey { get; private set; } = "crud";
 
     public int ErrorCount => Diagnostics.Count(d => d.Severity == LintSeverity.Error);
     public int WarningCount => Diagnostics.Count(d => d.Severity == LintSeverity.Warning);
@@ -21,36 +22,72 @@ public sealed class WorkspaceStateService
 
     public WorkspaceStateService(IWebHostEnvironment env)
     {
-        _samplePath = FindSampleFile(env.ContentRootPath) ?? FindSampleFile(AppContext.BaseDirectory);
+        _contentRootPath = env.ContentRootPath;
         LoadSampleOrDefault();
     }
 
     public void LoadSampleOrDefault()
     {
-        LastErrorMessage = null;
-        if (_samplePath is not null && File.Exists(_samplePath))
-        {
-            try
-            {
-                var json = File.ReadAllText(_samplePath);
-                Document = KnowledgeGraphDocument.FromJson(json);
-            }
-            catch (Exception ex)
-            {
-                LastErrorMessage = $"サンプルJSONの読み込みに失敗しました: {ex.Message}";
-                Document = CreateEmptyDocument();
-            }
-        }
-        else
+        if (!TryLoadSample("crud", out _))
         {
             Document = CreateEmptyDocument();
+            ActiveSampleKey = string.Empty;
+            SelectedRequirementId = null;
+            SelectedRationaleId = null;
+            RefreshLintAndNotify();
+        }
+    }
+
+    public bool TryLoadSample(string sampleKey, out string? error)
+    {
+        var fileName = sampleKey switch
+        {
+            "crud" => "crud-sample.v2.json",
+            "doorlock" => "doorlock-sample.v2.json",
+            _ => null
+        };
+
+        if (fileName is null)
+        {
+            error = $"未知のサンプルキー '{sampleKey}' です。";
+            LastErrorMessage = error;
+            OnChange?.Invoke();
+            return false;
         }
 
-        SelectedRequirementId = Document.Requirements
-            .FirstOrDefault(r => r.NodeKind == RequirementNodeKind.Atomic)?.Id
-            ?? Document.Requirements.FirstOrDefault()?.Id;
+        var path = FindSampleFile(_contentRootPath, fileName)
+            ?? FindSampleFile(AppContext.BaseDirectory, fileName);
 
-        RefreshLintAndNotify();
+        if (path is null || !File.Exists(path))
+        {
+            error = $"サンプルファイル 'samples/{fileName}' が見つかりませんでした。";
+            LastErrorMessage = error;
+            OnChange?.Invoke();
+            return false;
+        }
+
+        try
+        {
+            var json = File.ReadAllText(path);
+            Document = KnowledgeGraphDocument.FromJson(json);
+            ActiveSampleKey = sampleKey;
+            LastErrorMessage = null;
+            error = null;
+            SelectedRationaleId = null;
+            SelectedRequirementId = Document.Requirements
+                .FirstOrDefault(r => r.NodeKind == RequirementNodeKind.Atomic)?.Id
+                ?? Document.Requirements.FirstOrDefault()?.Id;
+
+            RefreshLintAndNotify();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"サンプルJSONの読み込みに失敗しました: {ex.Message}";
+            LastErrorMessage = error;
+            OnChange?.Invoke();
+            return false;
+        }
     }
 
     public void SelectRequirement(string? requirementId)
@@ -122,6 +159,8 @@ public sealed class WorkspaceStateService
         {
             var imported = KnowledgeGraphDocument.FromJson(json);
             Document = imported;
+            ActiveSampleKey = string.Empty;
+            SelectedRationaleId = null;
             SelectedRequirementId = Document.Requirements
                 .FirstOrDefault(r => r.NodeKind == RequirementNodeKind.Atomic)?.Id
                 ?? Document.Requirements.FirstOrDefault()?.Id;
@@ -577,12 +616,12 @@ public sealed class WorkspaceStateService
         OnChange?.Invoke();
     }
 
-    private static string? FindSampleFile(string startDir)
+    private static string? FindSampleFile(string startDir, string fileName)
     {
         var dir = new DirectoryInfo(startDir);
         while (dir is not null)
         {
-            var candidate = Path.Combine(dir.FullName, "samples", "crud-sample.v2.json");
+            var candidate = Path.Combine(dir.FullName, "samples", fileName);
             if (File.Exists(candidate))
             {
                 return candidate;

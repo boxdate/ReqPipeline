@@ -48,6 +48,19 @@
             </div>
 
             <div class="v2-header-actions">
+                <div class="btn-group btn-group-sm" role="group" aria-label="Sample Switcher" title="サンプルデータセットを切替">
+                    <button type="button"
+                            class="v2-btn @(Workspace.ActiveSampleKey == "crud" ? "v2-btn-primary" : "v2-btn-ghost")"
+                            @onclick='() => SwitchSample("crud", "CRUD")'>
+                        CRUD
+                    </button>
+                    <button type="button"
+                            class="v2-btn @(Workspace.ActiveSampleKey == "doorlock" ? "v2-btn-primary" : "v2-btn-ghost")"
+                            @onclick='() => SwitchSample("doorlock", "DoorLock")'>
+                        DoorLock
+                    </button>
+                </div>
+
                 <label class="v2-btn v2-btn-ghost mb-0" role="button" title="V2 JSONファイルをインポート">
                     JSON Import
                     <InputFile OnChange="HandleImportJson" accept=".json,application/json" style="display:none" />
@@ -91,6 +104,20 @@
     private void HandleWorkspaceChanged()
     {
         InvokeAsync(StateHasChanged);
+    }
+
+    private void SwitchSample(string sampleKey, string displayName)
+    {
+        if (Workspace.TryLoadSample(sampleKey, out var error))
+        {
+            _statusIsError = false;
+            _statusMessage = $"'{displayName}' サンプルを読み込みました（要求: {Workspace.Document.Requirements.Count}件 / 動詞: {Workspace.Document.BehaviorCatalog.Count}件 / 語彙: {Workspace.Document.Glossary.Count}件）。";
+        }
+        else
+        {
+            _statusIsError = true;
+            _statusMessage = error ?? $"'{displayName}' サンプルの読み込みに失敗しました。";
+        }
     }
 
     private async Task HandleImportJson(InputFileChangeEventArgs e)
