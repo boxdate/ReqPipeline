@@ -1,23 +1,137 @@
 ﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject WorkspaceStateService Workspace
+@inject IJSRuntime JS
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+<div class="v2-shell">
+    <header class="v2-header">
+        <div class="v2-header-left">
+            <div class="v2-brand">
+                <span class="v2-brand-dot"></span>
+                <span class="v2-brand-title">ReqPipeline</span>
+                <span class="v2-schema-tag">V2 MVP</span>
+            </div>
 
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+            <nav class="v2-nav" aria-label="Primary Navigation">
+                <NavLink class="v2-nav-tab" href="" Match="NavLinkMatch.All">
+                    Workbench
+                </NavLink>
+                <NavLink class="v2-nav-tab" href="glossary">
+                    Glossary (@Workspace.Document.Glossary.Count)
+                </NavLink>
+                <NavLink class="v2-nav-tab" href="usdm">
+                    USDM View
+                </NavLink>
+                <NavLink class="v2-nav-tab" href="fsm">
+                    FSM View
+                </NavLink>
+                <NavLink class="v2-nav-tab" href="journey">
+                    Journey
+                </NavLink>
+            </nav>
         </div>
 
-        <article class="content px-4">
-            @Body
-        </article>
+        <div class="v2-header-right">
+            <div class="v2-lint-summary" title="GraphLinter リアルタイム検証結果">
+                <span class="v2-pill @(Workspace.ErrorCount == 0 ? "v2-pill-ok" : "v2-pill-error")">
+                    Errors: @Workspace.ErrorCount
+                </span>
+                @if (Workspace.WarningCount > 0)
+                {
+                    <span class="v2-pill v2-pill-warn">
+                        Warnings: @Workspace.WarningCount
+                    </span>
+                }
+            </div>
+
+            <div class="v2-header-actions">
+                <label class="v2-btn v2-btn-ghost mb-0" role="button" title="V2 JSONファイルをインポート">
+                    JSON Import
+                    <InputFile OnChange="HandleImportJson" accept=".json,application/json" style="display:none" />
+                </label>
+
+                <button type="button" class="v2-btn v2-btn-primary" @onclick="HandleExportJson" title="現在の正本JSONをダウンロード">
+                    JSON Export
+                </button>
+            </div>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <div class="v2-banner @(_statusIsError ? "v2-banner-error" : "v2-banner-info")">
+            <span>@_statusMessage</span>
+            <button type="button" class="v2-banner-close" @onclick="() => _statusMessage = null">×</button>
+        </div>
+    }
+
+    <main class="v2-main">
+        @Body
     </main>
 </div>
 
 <div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
+    予期しないエラーが発生しました。
+    <a href="." class="reload">再読み込み</a>
+    <span class="dismiss">×</span>
 </div>
+
+@code {
+    private string? _statusMessage;
+    private bool _statusIsError;
+
+    protected override void OnInitialized()
+    {
+        Workspace.OnChange += HandleWorkspaceChanged;
+    }
+
+    private void HandleWorkspaceChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleImportJson(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+            using var reader = new StreamReader(stream);
+            var json = await reader.ReadToEndAsync();
+
+            if (Workspace.TryImportJson(json, out var error))
+            {
+                _statusIsError = false;
+                _statusMessage = $"'{file.Name}' をインポートしました（要求: {Workspace.Document.Requirements.Count}件 / 語彙: {Workspace.Document.Glossary.Count}件）。";
+            }
+            else
+            {
+                _statusIsError = true;
+                _statusMessage = error ?? "JSONのインポートに失敗しました。";
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusIsError = true;
+            _statusMessage = $"ファイル読み込みエラー: {ex.Message}";
+        }
+    }
+
+    private async Task HandleExportJson()
+    {
+        var json = Workspace.ExportJson();
+        var docId = string.IsNullOrWhiteSpace(Workspace.Document.DocumentId)
+            ? "knowledge-graph"
+            : Workspace.Document.DocumentId.ToLowerInvariant();
+        var fileName = $"{docId}.v2.json";
+
+        await JS.InvokeVoidAsync("reqPipelineV2.downloadTextFile", fileName, json, "application/json;charset=utf-8");
+        _statusIsError = false;
+        _statusMessage = $"'{fileName}' をエクスポートしました。";
+    }
+
+    public void Dispose()
+    {
+        Workspace.OnChange -= HandleWorkspaceChanged;
+    }
+}
