@@ -16,21 +16,23 @@ public class GraphLinterTests
         ],
         Glossary =
         [
-            new ApprovedGlossaryTerm { Id = "SYS-1", CanonicalName = "対象システム", ConceptType = ConceptType.System },
-            new ApprovedGlossaryTerm { Id = "ACT-1", CanonicalName = "利用者", ConceptType = ConceptType.Actor },
-            new ApprovedGlossaryTerm { Id = "OBJ-1", CanonicalName = "顧客", ConceptType = ConceptType.DomainObject },
-            new ApprovedGlossaryTerm { Id = "EVT-1", CanonicalName = "登録操作", ConceptType = ConceptType.Event },
+            new ApprovedGlossaryTerm { Id = "SYS-1", CanonicalName = "TargetSystem", DisplayName = "対象システム", ConceptType = ConceptType.System },
+            new ApprovedGlossaryTerm { Id = "ACT-1", CanonicalName = "User", DisplayName = "利用者", ConceptType = ConceptType.Actor },
+            new ApprovedGlossaryTerm { Id = "OBJ-1", CanonicalName = "Customer", DisplayName = "顧客", ConceptType = ConceptType.DomainObject },
+            new ApprovedGlossaryTerm { Id = "EVT-1", CanonicalName = "RegisterAction", DisplayName = "登録操作", ConceptType = ConceptType.Event },
             new ApprovedGlossaryTerm
             {
                 Id = "SV-BOOL",
-                CanonicalName = "認証済み",
+                CanonicalName = "IsAuthenticated",
+                DisplayName = "認証済み",
                 ConceptType = ConceptType.StateVariable,
                 LogicalType = new LogicalTypeDefinition { Kind = LogicalTypeKind.Boolean }
             },
             new ApprovedGlossaryTerm
             {
                 Id = "LC-1",
-                CanonicalName = "ステータス",
+                CanonicalName = "Status",
+                DisplayName = "ステータス",
                 ConceptType = ConceptType.LifecycleState,
                 LogicalType = new LogicalTypeDefinition
                 {
@@ -400,8 +402,8 @@ public class GraphLinterTests
 
         Assert.Equal(2, lint008.Count);
         Assert.All(lint008, d => Assert.Equal(LintSeverity.Error, d.Severity));
-        Assert.Contains(lint008, d => d.TargetId == "REQ-DEL-PROHIBIT" && d.Message.Contains("REQ-DEL-ALLOW") && d.Message.Contains("許可と禁止の矛盾"));
-        Assert.Contains(lint008, d => d.TargetId == "REQ-DEL-ALLOW" && d.Message.Contains("REQ-DEL-PROHIBIT") && d.Message.Contains("許可と禁止の矛盾"));
+        Assert.Contains(lint008, d => d.TargetId == "REQ-DEL-PROHIBIT" && d.Message.Contains("REQ-DEL-ALLOW") && d.Message.Contains("allow vs prohibit contradiction"));
+        Assert.Contains(lint008, d => d.TargetId == "REQ-DEL-ALLOW" && d.Message.Contains("REQ-DEL-PROHIBIT") && d.Message.Contains("allow vs prohibit contradiction"));
     }
 
     [Fact]
@@ -542,7 +544,128 @@ public class GraphLinterTests
 
         Assert.Equal(2, lint008.Count);
         Assert.All(lint008, d => Assert.Equal(LintSeverity.Error, d.Severity));
-        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-A" && d.Message.Contains("REQ-TRANS-B") && d.Message.Contains("遷移先の競合"));
-        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-B" && d.Message.Contains("REQ-TRANS-A") && d.Message.Contains("遷移先の競合"));
+        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-A" && d.Message.Contains("REQ-TRANS-B") && d.Message.Contains("conflicting transition targets"));
+        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-B" && d.Message.Contains("REQ-TRANS-A") && d.Message.Contains("conflicting transition targets"));
+    }
+
+    [Fact]
+    public void Lint009_DetectsInvalidOrDuplicateGlossarySymbols()
+    {
+        var doc = CreateValidBaseDocument();
+        doc.Glossary.Add(new ApprovedGlossaryTerm
+        {
+            Id = "SV-BAD-NAME",
+            CanonicalName = "車速",
+            DisplayName = "車速",
+            ConceptType = ConceptType.StateVariable,
+            LogicalType = new LogicalTypeDefinition
+            {
+                Kind = LogicalTypeKind.Enum,
+                AllowedValues = ["高速", "LowSpeed", "LowSpeed"]
+            }
+        });
+        doc.Glossary.Add(new ApprovedGlossaryTerm
+        {
+            Id = "SYS-DUP",
+            CanonicalName = "TargetSystem",
+            DisplayName = "重複システム",
+            ConceptType = ConceptType.System
+        });
+
+        var diagnostics = GraphLinter.Lint(doc);
+        var lint009 = diagnostics.Where(d => d.RuleId == GraphLinter.RuleGlossarySymbolConvention).ToList();
+
+        Assert.Equal(4, lint009.Count);
+        Assert.All(lint009, d => Assert.Equal(LintSeverity.Error, d.Severity));
+        Assert.Contains(lint009, d => d.TargetId == "SV-BAD-NAME" && d.Message.Contains("invalid CanonicalName"));
+        Assert.Contains(lint009, d => d.TargetId == "SV-BAD-NAME" && d.Message.Contains("invalid AllowedValue '高速'"));
+        Assert.Contains(lint009, d => d.TargetId == "SV-BAD-NAME" && d.Message.Contains("duplicate AllowedValue 'LowSpeed'"));
+        Assert.Contains(lint009, d => d.TargetId == "SYS-DUP" && d.Message.Contains("duplicate CanonicalName 'TargetSystem'"));
+    }
+
+    [Fact]
+    public void Lint010_DetectsOrphanValueLabelsKeys()
+    {
+        var doc = CreateValidBaseDocument();
+        doc.Glossary.Add(new ApprovedGlossaryTerm
+        {
+            Id = "SV-SPEED",
+            CanonicalName = "VehicleSpeed",
+            DisplayName = "車速",
+            ConceptType = ConceptType.StateVariable,
+            Unit = "km/h",
+            AbstractionNote = "車速 >= 30 km/h を HighSpeed として抽象化",
+            LogicalType = new LogicalTypeDefinition
+            {
+                Kind = LogicalTypeKind.Enum,
+                AllowedValues = ["LowSpeed", "HighSpeed"],
+                ValueLabels = new Dictionary<string, string>
+                {
+                    ["LowSpeed"] = "低速",
+                    ["UnknownSpeed"] = "不明"
+                }
+            }
+        });
+        doc.Glossary.Add(new ApprovedGlossaryTerm
+        {
+            Id = "SV-FLAG",
+            CanonicalName = "BrakeActive",
+            DisplayName = "ブレーキ作動",
+            ConceptType = ConceptType.StateVariable,
+            LogicalType = new LogicalTypeDefinition
+            {
+                Kind = LogicalTypeKind.Boolean,
+                ValueLabels = new Dictionary<string, string>
+                {
+                    ["true"] = "作動中",
+                    ["maybe"] = "不明"
+                }
+            }
+        });
+
+        var diagnostics = GraphLinter.Lint(doc);
+        var lint010 = diagnostics.Where(d => d.RuleId == GraphLinter.RuleGlossaryValueLabelsIntegrity).ToList();
+
+        Assert.Equal(2, lint010.Count);
+        Assert.All(lint010, d => Assert.Equal(LintSeverity.Error, d.Severity));
+        Assert.Contains(lint010, d => d.TargetId == "SV-SPEED" && d.Message.Contains("UnknownSpeed"));
+        Assert.Contains(lint010, d => d.TargetId == "SV-FLAG" && d.Message.Contains("maybe"));
+    }
+
+    [Fact]
+    public void Lint011_DetectsDeprecatedLabelUsageAcrossDocument()
+    {
+        var doc = CreateValidBaseDocument();
+        doc.Glossary.Add(new ApprovedGlossaryTerm
+        {
+            Id = "SV-SPEED",
+            CanonicalName = "VehicleSpeed",
+            DisplayName = "車速",
+            ConceptType = ConceptType.StateVariable,
+            Unit = "km/h",
+            DeprecatedLabels = ["スピード"],
+            LogicalType = new LogicalTypeDefinition
+            {
+                Kind = LogicalTypeKind.Enum,
+                AllowedValues = ["LowSpeed", "HighSpeed"]
+            }
+        });
+        doc.Requirements[0].Title = "スピード監視要求";
+        doc.EscapeRecords.Add(new FreeTextEscapeRecord
+        {
+            Id = "ESC-DEP",
+            RequirementId = "REQ-1-1",
+            Reason = EscapeReason.QuantitativeCalculation,
+            FreeText = "スピードが30km/h以上の場合",
+            Status = EscapeRecordStatus.RESOLVED
+        });
+
+        var diagnostics = GraphLinter.Lint(doc);
+        var lint011 = diagnostics.Where(d => d.RuleId == GraphLinter.RuleDeprecatedLabelUsage).ToList();
+
+        Assert.Equal(2, lint011.Count);
+        Assert.All(lint011, d => Assert.Equal(LintSeverity.Error, d.Severity));
+        Assert.Contains(lint011, d => d.TargetId == "REQ-1" && d.Message.Contains("スピード"));
+        Assert.Contains(lint011, d => d.TargetId == "ESC-DEP" && d.Message.Contains("スピード"));
     }
 }

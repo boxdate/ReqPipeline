@@ -104,8 +104,10 @@ public sealed class UsdmMarkdownRenderer
                 {
                     if (child.NodeKind == RequirementNodeKind.Atomic)
                     {
-                        var sentence = JapaneseRequirementRenderer.Render(child, glossaryById, escapeRecords);
-                        sb.AppendLine($"{step}. **[{child.Id}] {child.Title}** (`{child.EarsPattern}`): {sentence}");
+                        var jaSentence = JapaneseRequirementRenderer.Render(child, glossaryById, escapeRecords);
+                        var enSentence = EnglishRequirementRenderer.Render(child, glossaryById, escapeRecords);
+                        sb.AppendLine($"{step}. **[{child.Id}] {child.Title}** (`{child.EarsPattern}`): {jaSentence}");
+                        sb.AppendLine($"   - *Canonical EARS:* `{enSentence}`");
                         step++;
                     }
                     else
@@ -118,8 +120,10 @@ public sealed class UsdmMarkdownRenderer
         }
         else
         {
-            var sentence = JapaneseRequirementRenderer.Render(req, glossaryById, escapeRecords);
-            sb.AppendLine($"- **[{req.Id}] {req.Title}** (`{req.EarsPattern}`): {sentence}");
+            var jaSentence = JapaneseRequirementRenderer.Render(req, glossaryById, escapeRecords);
+            var enSentence = EnglishRequirementRenderer.Render(req, glossaryById, escapeRecords);
+            sb.AppendLine($"- **[{req.Id}] {req.Title}** (`{req.EarsPattern}`): {jaSentence}");
+            sb.AppendLine($"  - *Canonical EARS:* `{enSentence}`");
             sb.AppendLine();
         }
     }

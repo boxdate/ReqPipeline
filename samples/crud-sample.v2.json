@@ -20,7 +20,8 @@
   "glossary": [
     {
       "id": "TERM-SYS-001",
-      "canonicalName": "顧客管理システム",
+      "canonicalName": "CustomerManagementSystem",
+      "displayName": "顧客管理システム",
       "conceptType": "System",
       "description": "顧客マスタの登録・閲覧・管理を行うWebアプリケーション。",
       "aliases": ["CRM", "本システム"],
@@ -31,7 +32,8 @@
     },
     {
       "id": "TERM-ACT-001",
-      "canonicalName": "利用者",
+      "canonicalName": "User",
+      "displayName": "利用者",
       "conceptType": "Actor",
       "description": "顧客管理システムを操作する認証済みユーザー。",
       "aliases": ["ユーザー", "操作者"],
@@ -42,7 +44,8 @@
     },
     {
       "id": "TERM-OBJ-001",
-      "canonicalName": "顧客",
+      "canonicalName": "Customer",
+      "displayName": "顧客",
       "conceptType": "DomainObject",
       "description": "管理対象となる顧客エンティティ。",
       "aliases": ["顧客レコード", "顧客データ"],
@@ -53,7 +56,8 @@
     },
     {
       "id": "TERM-OBJ-002",
-      "canonicalName": "顧客一覧",
+      "canonicalName": "CustomerList",
+      "displayName": "顧客一覧",
       "conceptType": "DomainObject",
       "description": "登録済み顧客の一覧ビューデータ。",
       "aliases": ["顧客リスト"],
@@ -64,7 +68,8 @@
     },
     {
       "id": "TERM-EVT-001",
-      "canonicalName": "顧客登録要求",
+      "canonicalName": "CustomerCreateRequested",
+      "displayName": "顧客登録要求",
       "conceptType": "Event",
       "description": "新規顧客の登録フォームが送信されたイベント。",
       "aliases": [],
@@ -75,7 +80,8 @@
     },
     {
       "id": "TERM-EVT-002",
-      "canonicalName": "顧客一覧画面表示要求",
+      "canonicalName": "CustomerListViewRequested",
+      "displayName": "顧客一覧画面表示要求",
       "conceptType": "Event",
       "description": "顧客一覧画面へのアクセスが行われたイベント。",
       "aliases": [],
@@ -86,7 +92,8 @@
     },
     {
       "id": "TERM-EVT-003",
-      "canonicalName": "顧客選択操作",
+      "canonicalName": "CustomerSelected",
+      "displayName": "顧客選択操作",
       "conceptType": "Event",
       "description": "顧客一覧から特定の顧客行が選択されたイベント。",
       "aliases": [],
@@ -97,7 +104,8 @@
     },
     {
       "id": "TERM-EVT-004",
-      "canonicalName": "顧客削除要求",
+      "canonicalName": "CustomerDeleteRequested",
+      "displayName": "顧客削除要求",
       "conceptType": "Event",
       "description": "顧客レコードの削除操作が要求されたイベント。",
       "aliases": [],
@@ -108,24 +116,36 @@
     },
     {
       "id": "TERM-LC-001",
-      "canonicalName": "画面状態",
+      "canonicalName": "ScreenState",
+      "displayName": "画面状態",
       "conceptType": "LifecycleState",
       "description": "顧客管理画面の現在の表示状態。",
       "aliases": [],
       "logicalType": {
         "kind": "Enum",
-        "allowedValues": ["一覧", "詳細", "作成"]
+        "allowedValues": ["List", "Detail", "Create"],
+        "valueLabels": {
+          "List": "一覧",
+          "Detail": "詳細",
+          "Create": "作成"
+        }
       }
     },
     {
       "id": "TERM-SV-001",
-      "canonicalName": "ユーザーロール",
+      "canonicalName": "UserRole",
+      "displayName": "ユーザーロール",
       "conceptType": "StateVariable",
       "description": "操作中の利用者に付与された権限ロール。",
       "aliases": ["権限"],
       "logicalType": {
         "kind": "Enum",
-        "allowedValues": ["Admin", "Member", "Viewer"]
+        "allowedValues": ["Admin", "Member", "Viewer"],
+        "valueLabels": {
+          "Admin": "管理者",
+          "Member": "一般メンバー",
+          "Viewer": "閲覧者"
+        }
       }
     }
   ],
@@ -190,14 +210,14 @@
         {
           "stateTermRef": "TERM-LC-001",
           "operator": "EQ",
-          "expectedValues": ["一覧"]
+          "expectedValues": ["List"]
         }
       ],
       "behavior": {
         "kind": "TRANSITION",
         "targetTermRef": "TERM-LC-001",
-        "fromValue": "一覧",
-        "toValue": "詳細",
+        "fromValue": "List",
+        "toValue": "Detail",
         "timing": "UNSPECIFIED"
       }
     },

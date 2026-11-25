@@ -75,7 +75,7 @@ public class V2CrudSampleAndRenderingTests
             JapaneseRequirementRenderer.Render(reqById["REQ-001-3"], doc.Glossary));
 
         Assert.Equal(
-            "もしユーザーロールがAdmin以外であり、利用者による顧客削除要求が発生したならば、顧客管理システムは、顧客の削除を禁止すること。",
+            "もしユーザーロールが管理者以外であり、利用者による顧客削除要求が発生したならば、顧客管理システムは、顧客の削除を禁止すること。",
             JapaneseRequirementRenderer.Render(reqById["REQ-002-1"], doc.Glossary));
     }
 
@@ -96,7 +96,31 @@ public class V2CrudSampleAndRenderingTests
         Assert.Contains("## [RAT-002] 誤削除防止とアクセス制御の徹底", markdown);
         Assert.Contains("### [REQ-002] 管理者以外の利用者による顧客削除の防止", markdown);
         Assert.Contains("管理者権限（Admin）を持たない利用者が顧客の削除を試みた場合、顧客管理システムはその削除操作を禁止すること。", markdown);
-        Assert.Contains("1. **[REQ-002-1] 管理者以外の顧客削除禁止** (`UnwantedBehavior`): もしユーザーロールがAdmin以外であり、利用者による顧客削除要求が発生したならば、顧客管理システムは、顧客の削除を禁止すること。", markdown);
+        Assert.Contains("1. **[REQ-002-1] 管理者以外の顧客削除禁止** (`UnwantedBehavior`): もしユーザーロールが管理者以外であり、利用者による顧客削除要求が発生したならば、顧客管理システムは、顧客の削除を禁止すること。", markdown);
+        Assert.Contains("*Canonical EARS:* `If UserRole is not Admin and User triggers CustomerDeleteRequested, then the CustomerManagementSystem shall prohibit DELETE on Customer.`", markdown);
+    }
+
+    [Fact]
+    public void CrudSampleJson_RendersExpectedEnglishEarsSentences()
+    {
+        var doc = KnowledgeGraphDocument.FromJson(File.ReadAllText(GetSamplePath()));
+        var reqById = doc.Requirements.ToDictionary(r => r.Id);
+
+        Assert.Equal(
+            "When User triggers CustomerCreateRequested, the CustomerManagementSystem shall immediately create Customer.",
+            EnglishRequirementRenderer.Render(reqById["REQ-001-1"], doc.Glossary));
+
+        Assert.Equal(
+            "When User triggers CustomerListViewRequested, the CustomerManagementSystem shall display CustomerList.",
+            EnglishRequirementRenderer.Render(reqById["REQ-001-2"], doc.Glossary));
+
+        Assert.Equal(
+            "While ScreenState is List, when User triggers CustomerSelected, the CustomerManagementSystem shall transition ScreenState from List to Detail.",
+            EnglishRequirementRenderer.Render(reqById["REQ-001-3"], doc.Glossary));
+
+        Assert.Equal(
+            "If UserRole is not Admin and User triggers CustomerDeleteRequested, then the CustomerManagementSystem shall prohibit DELETE on Customer.",
+            EnglishRequirementRenderer.Render(reqById["REQ-002-1"], doc.Glossary));
     }
 
     [Fact]
@@ -166,5 +190,98 @@ public class V2CrudSampleAndRenderingTests
             Behavior = new BehaviorNode { Kind = BehaviorKind.DELETE, TargetTermRef = "OBJ" }
         };
         Assert.Equal("監査ログ機能がtrueの場合、注文システムは、注文を削除すること。", JapaneseRequirementRenderer.Render(optionalFeature, glossary));
+    }
+
+    [Fact]
+    public void GlossaryMetadata_BooleanAndEnumValueLabels_RenderAndRoundTrip()
+    {
+        var doc = new KnowledgeGraphDocument
+        {
+            DocumentId = "DOC-ADAS-001",
+            Title = "車速制御仕様",
+            Rationales = [new RationaleNode { Id = "RAT-1", Title = "安全走行", Description = "高速走行時の安全確保" }],
+            Glossary =
+            [
+                new ApprovedGlossaryTerm
+                {
+                    Id = "SYS-ADAS",
+                    CanonicalName = "AdasController",
+                    DisplayName = "ADASコントローラ",
+                    ConceptType = ConceptType.System
+                },
+                new ApprovedGlossaryTerm
+                {
+                    Id = "SV-SPEED",
+                    CanonicalName = "VehicleSpeed",
+                    DisplayName = "車速",
+                    ConceptType = ConceptType.StateVariable,
+                    Unit = "km/h",
+                    AbstractionNote = "車速 >= 30 km/h を HighSpeed として抽象化",
+                    DeprecatedLabels = ["スピード"],
+                    LogicalType = new LogicalTypeDefinition
+                    {
+                        Kind = LogicalTypeKind.Enum,
+                        AllowedValues = ["LowSpeed", "HighSpeed"],
+                        ValueLabels = new Dictionary<string, string>
+                        {
+                            ["LowSpeed"] = "低速",
+                            ["HighSpeed"] = "高速"
+                        }
+                    }
+                },
+                new ApprovedGlossaryTerm
+                {
+                    Id = "SV-LOCK",
+                    CanonicalName = "DoorLocked",
+                    DisplayName = "ドアロック状態",
+                    ConceptType = ConceptType.StateVariable,
+                    LogicalType = new LogicalTypeDefinition
+                    {
+                        Kind = LogicalTypeKind.Boolean,
+                        ValueLabels = new Dictionary<string, string>
+                        {
+                            ["true"] = "施錠",
+                            ["false"] = "解錠"
+                        }
+                    }
+                }
+            ],
+            Requirements =
+            [
+                new CanonicalRequirementNode
+                {
+                    Id = "REQ-1",
+                    Title = "高速走行時の自動ドアロック",
+                    NodeKind = RequirementNodeKind.Atomic,
+                    RationaleRefs = ["RAT-1"],
+                    EarsPattern = EarsEntryPattern.StateDriven,
+                    SubjectSystemRef = "SYS-ADAS",
+                    Preconditions =
+                    [
+                        new PreconditionClause { StateTermRef = "SV-SPEED", Operator = ComparisonOperator.EQ, ExpectedValues = ["HighSpeed"] }
+                    ],
+                    Behavior = new BehaviorNode
+                    {
+                        Kind = BehaviorKind.SET,
+                        TargetTermRef = "SV-LOCK",
+                        SetValue = "true",
+                        Timing = TimingKind.IMMEDIATE
+                    }
+                }
+            ]
+        };
+
+        var json = doc.ToJson();
+        var restored = KnowledgeGraphDocument.FromJson(json);
+
+        Assert.Empty(GraphLinter.Lint(restored));
+
+        var speedTerm = restored.Glossary.Single(t => t.Id == "SV-SPEED");
+        Assert.Equal("km/h", speedTerm.Unit);
+        Assert.Equal("車速 >= 30 km/h を HighSpeed として抽象化", speedTerm.AbstractionNote);
+        Assert.Equal(["スピード"], speedTerm.DeprecatedLabels);
+
+        var sentence = JapaneseRequirementRenderer.Render(restored.Requirements[0], restored.Glossary);
+        Assert.Equal("車速が高速の間、ADASコントローラは、即座にドアロック状態を施錠に設定すること。", sentence);
     }
 }
