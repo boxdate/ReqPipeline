@@ -401,7 +401,10 @@
                                         <span class="badge bg-light text-dark border">@child.EarsPattern</span>
                                         @if (child.Behavior is not null)
                                         {
-                                            <span class="badge bg-info-subtle text-info-emphasis">@child.Behavior.Kind</span>
+                                            var childDef = Workspace.FindBehaviorDefinition(child.Behavior.BehaviorDefRef);
+                                            <span class="badge bg-info-subtle text-info-emphasis">
+                                                @(childDef is not null ? childDef.JapaneseLabel : child.Behavior.BehaviorDefRef)
+                                            </span>
                                         }
                                     </div>
                                     <div class="d-flex align-items-center gap-1 flex-shrink-0">
@@ -729,28 +732,57 @@
                     else
                     {
                         var behavior = selected.Behavior;
-                        var targetCandidates = GetTargetTermsForBehavior(behavior.Kind);
+                        var selectedDef = Workspace.FindBehaviorDefinition(behavior.BehaviorDefRef);
+                        var targetCandidates = GetTargetTermsForBehavior(selectedDef);
                         var targetAllowedValues = Workspace.GetAllowedValues(behavior.TargetTermRef);
+                        var targetTerm = Workspace.Document.Glossary.FirstOrDefault(
+                            t => string.Equals(t.Id, behavior.TargetTermRef, StringComparison.Ordinal));
+                        var hasLogicalValues = targetTerm?.LogicalType.Kind is LogicalTypeKind.Enum or LogicalTypeKind.Boolean;
 
                         <div class="mb-3">
-                            <label class="slot-label">BehaviorKind (6種)</label>
-                            <div class="chip-group">
-                                @foreach (var kind in Enum.GetValues<BehaviorKind>())
+                            <div class="d-flex align-items-center justify-content-between">
+                                <label class="slot-label">振る舞い動詞 (BehaviorCatalog)</label>
+                                @if (selectedDef is not null)
                                 {
-                                    <button type="button"
-                                            class="slot-chip @(behavior.Kind == kind ? "active" : "")"
-                                            @onclick="() => OnBehaviorKindChanged(behavior, kind)">
-                                        @kind
-                                    </button>
+                                    <span class="badge bg-light text-dark border font-monospace">
+                                        @selectedDef.BehaviorDefId · @selectedDef.Effect
+                                    </span>
                                 }
                             </div>
+                            @if (Workspace.Document.BehaviorCatalog.Count == 0)
+                            {
+                                <div class="text-danger small">
+                                    BehaviorCatalog が未定義です。<a href="behaviors">Behaviors</a> タブから動詞を追加してください。
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="chip-group">
+                                    @foreach (var def in Workspace.Document.BehaviorCatalog)
+                                    {
+                                        var isActive = string.Equals(behavior.BehaviorDefRef, def.BehaviorDefId, StringComparison.Ordinal);
+                                        <button type="button"
+                                                class="slot-chip @(isActive ? "active" : "")"
+                                                title="@def.Description (@def.Effect)"
+                                                @onclick="() => OnBehaviorDefChanged(behavior, def)">
+                                            @def.JapaneseLabel <span class="opacity-75 small">(@def.CanonicalLabel)</span>
+                                        </button>
+                                    }
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(behavior.BehaviorDefRef) && selectedDef is null)
+                                {
+                                    <div class="text-danger small mt-1">
+                                        ⚠ BehaviorCatalog に存在しない参照: <code>@behavior.BehaviorDefRef</code>
+                                    </div>
+                                }
+                            }
                         </div>
 
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="slot-label">
                                     対象語彙 (TargetTermRef)
-                                    <span class="slot-type-hint">@GetTargetTypeHint(behavior.Kind)</span>
+                                    <span class="slot-type-hint">@GetTargetTypeHint(selectedDef)</span>
                                 </label>
                                 <select class="form-select form-select-sm"
                                         value="@behavior.TargetTermRef"
@@ -763,9 +795,8 @@
                                     @if (!string.IsNullOrWhiteSpace(behavior.TargetTermRef)
                                         && !targetCandidates.Any(t => t.Id == behavior.TargetTermRef))
                                     {
-                                        var current = Workspace.Document.Glossary.FirstOrDefault(t => t.Id == behavior.TargetTermRef);
                                         <option value="@behavior.TargetTermRef">
-                                            ⚠ @(current is not null ? $"{FormatTermOption(current)} ({current.ConceptType})" : behavior.TargetTermRef)
+                                            ⚠ @(targetTerm is not null ? $"{FormatTermOption(targetTerm)} ({targetTerm.ConceptType})" : behavior.TargetTermRef)
                                         </option>
                                     }
                                 </select>
@@ -778,62 +809,93 @@
                                 }
                             </div>
 
-                            @if (behavior.Kind == BehaviorKind.TRANSITION)
+                            @if (selectedDef is not null && (selectedDef.RequiresFromValue || selectedDef.RequiresToValue))
                             {
-                                <div class="col-md-3">
-                                    <label class="slot-label">FromValue</label>
-                                    <select class="form-select form-select-sm"
-                                            value="@(behavior.FromValue ?? "")"
-                                            @onchange="e => { behavior.FromValue = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
-                                        <option value="">-- 未選択 --</option>
-                                        @foreach (var val in targetAllowedValues)
-                                        {
-                                            <option value="@val">@FormatValueOption(behavior.TargetTermRef, val)</option>
-                                        }
-                                    </select>
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="slot-label">ToValue</label>
-                                    <select class="form-select form-select-sm"
-                                            value="@(behavior.ToValue ?? "")"
-                                            @onchange="e => { behavior.ToValue = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
-                                        <option value="">-- 未選択 --</option>
-                                        @foreach (var val in targetAllowedValues)
-                                        {
-                                            <option value="@val">@FormatValueOption(behavior.TargetTermRef, val)</option>
-                                        }
-                                    </select>
-                                </div>
+                                var colSize = selectedDef.RequiresFromValue && selectedDef.RequiresToValue ? 3 : 6;
+                                @if (selectedDef.RequiresFromValue)
+                                {
+                                    <div class="col-md-@colSize">
+                                        <label class="slot-label">FromValue</label>
+                                        <select class="form-select form-select-sm"
+                                                value="@(behavior.FromValue ?? "")"
+                                                @onchange="e => { behavior.FromValue = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
+                                            <option value="">-- 未選択 --</option>
+                                            @foreach (var val in targetAllowedValues)
+                                            {
+                                                <option value="@val">@FormatValueOption(behavior.TargetTermRef, val)</option>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(behavior.FromValue)
+                                                && !targetAllowedValues.Contains(behavior.FromValue, StringComparer.Ordinal))
+                                            {
+                                                <option value="@behavior.FromValue">⚠ @behavior.FromValue</option>
+                                            }
+                                        </select>
+                                    </div>
+                                }
+                                @if (selectedDef.RequiresToValue)
+                                {
+                                    <div class="col-md-@colSize">
+                                        <label class="slot-label">ToValue</label>
+                                        <select class="form-select form-select-sm"
+                                                value="@(behavior.ToValue ?? "")"
+                                                @onchange="e => { behavior.ToValue = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
+                                            <option value="">-- 未選択 --</option>
+                                            @foreach (var val in targetAllowedValues)
+                                            {
+                                                <option value="@val">@FormatValueOption(behavior.TargetTermRef, val)</option>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(behavior.ToValue)
+                                                && !targetAllowedValues.Contains(behavior.ToValue, StringComparer.Ordinal))
+                                            {
+                                                <option value="@behavior.ToValue">⚠ @behavior.ToValue</option>
+                                            }
+                                        </select>
+                                    </div>
+                                }
                             }
-                            else if (behavior.Kind == BehaviorKind.SET)
+
+                            @if (selectedDef?.Effect == SemanticEffect.Prohibit)
                             {
-                                <div class="col-md-6">
-                                    <label class="slot-label">SetValue</label>
+                                var prohibitCandidates = Workspace.Document.BehaviorCatalog
+                                    .Where(b => b.Effect != SemanticEffect.Prohibit)
+                                    .ToList();
+                                <div class="col-md-@(hasLogicalValues ? 3 : 6)">
+                                    <label class="slot-label">禁止する操作 (ProhibitedBehaviorDefRef)</label>
                                     <select class="form-select form-select-sm"
-                                            value="@(behavior.SetValue ?? "")"
-                                            @onchange="e => { behavior.SetValue = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
-                                        <option value="">-- 未選択 --</option>
-                                        @foreach (var val in targetAllowedValues)
-                                        {
-                                            <option value="@val">@FormatValueOption(behavior.TargetTermRef, val)</option>
-                                        }
-                                    </select>
-                                </div>
-                            }
-                            else if (behavior.Kind == BehaviorKind.PROHIBIT)
-                            {
-                                <div class="col-md-6">
-                                    <label class="slot-label">禁止する操作 (ProhibitedAction)</label>
-                                    <select class="form-select form-select-sm"
-                                            value="@(behavior.ProhibitedAction?.ToString() ?? "")"
-                                            @onchange="e => OnProhibitedActionChanged(behavior, e.Value?.ToString())">
+                                            value="@(behavior.ProhibitedBehaviorDefRef ?? "")"
+                                            @onchange="e => OnProhibitedBehaviorChanged(behavior, e.Value?.ToString())">
                                         <option value="">-- 操作全般を禁止 --</option>
-                                        @foreach (var action in new[] { BehaviorKind.CREATE, BehaviorKind.SET, BehaviorKind.DELETE, BehaviorKind.TRANSITION, BehaviorKind.DISPLAY })
+                                        @foreach (var actionDef in prohibitCandidates)
                                         {
-                                            <option value="@action">@action</option>
+                                            <option value="@actionDef.BehaviorDefId">@actionDef.JapaneseLabel (@actionDef.BehaviorDefId)</option>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(behavior.ProhibitedBehaviorDefRef)
+                                            && !prohibitCandidates.Any(c => c.BehaviorDefId == behavior.ProhibitedBehaviorDefRef))
+                                        {
+                                            <option value="@behavior.ProhibitedBehaviorDefRef">⚠ @behavior.ProhibitedBehaviorDefRef</option>
                                         }
                                     </select>
                                 </div>
+                                @if (hasLogicalValues)
+                                {
+                                    <div class="col-md-3">
+                                        <label class="slot-label">禁止する値 (ProhibitedToValue)</label>
+                                        <select class="form-select form-select-sm"
+                                                value="@(behavior.ProhibitedToValue ?? "")"
+                                                @onchange="e => { behavior.ProhibitedToValue = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }">
+                                            <option value="">-- すべての値 --</option>
+                                            @foreach (var val in targetAllowedValues)
+                                            {
+                                                <option value="@val">@FormatValueOption(behavior.TargetTermRef, val)</option>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(behavior.ProhibitedToValue)
+                                                && !targetAllowedValues.Contains(behavior.ProhibitedToValue, StringComparer.Ordinal))
+                                            {
+                                                <option value="@behavior.ProhibitedToValue">⚠ @behavior.ProhibitedToValue</option>
+                                            }
+                                        </select>
+                                    </div>
+                                }
                             }
                         </div>
                     }
@@ -1137,48 +1199,45 @@
 
     private void SetTiming(CanonicalRequirementNode node, TimingKind timing)
     {
-        node.Behavior ??= new BehaviorNode { Kind = BehaviorKind.DISPLAY };
+        node.Behavior ??= Workspace.CreateDefaultBehaviorNode();
         node.Behavior.Timing = timing;
         Workspace.NotifyChanged();
     }
 
     private void InitializeBehavior(CanonicalRequirementNode node)
     {
-        var defaultObj = Workspace.GetGlossaryByTypes(ConceptType.DomainObject).FirstOrDefault()?.Id ?? string.Empty;
-        node.Behavior = new BehaviorNode
-        {
-            Kind = BehaviorKind.DISPLAY,
-            TargetTermRef = defaultObj,
-            Timing = TimingKind.UNSPECIFIED
-        };
+        node.Behavior = Workspace.CreateDefaultBehaviorNode();
         Workspace.NotifyChanged();
     }
 
-    private void OnBehaviorKindChanged(BehaviorNode behavior, BehaviorKind kind)
+    private void OnBehaviorDefChanged(BehaviorNode behavior, BehaviorDefinition def)
     {
-        behavior.Kind = kind;
+        behavior.BehaviorDefRef = def.BehaviorDefId;
         behavior.FromValue = null;
         behavior.ToValue = null;
-        behavior.SetValue = null;
-        behavior.ProhibitedAction = kind == BehaviorKind.PROHIBIT ? BehaviorKind.DELETE : null;
 
-        var candidates = GetTargetTermsForBehavior(kind);
+        if (def.Effect != SemanticEffect.Prohibit)
+        {
+            behavior.ProhibitedBehaviorDefRef = null;
+            behavior.ProhibitedToValue = null;
+        }
+        else if (!string.IsNullOrWhiteSpace(behavior.ProhibitedBehaviorDefRef))
+        {
+            var prohibitedDef = Workspace.FindBehaviorDefinition(behavior.ProhibitedBehaviorDefRef);
+            if (prohibitedDef is null || prohibitedDef.Effect == SemanticEffect.Prohibit)
+            {
+                behavior.ProhibitedBehaviorDefRef = null;
+            }
+        }
+
+        var candidates = GetTargetTermsForBehavior(def);
         if (!candidates.Any(c => string.Equals(c.Id, behavior.TargetTermRef, StringComparison.Ordinal)))
         {
             behavior.TargetTermRef = candidates.FirstOrDefault()?.Id ?? string.Empty;
+            behavior.ProhibitedToValue = null;
         }
 
-        var allowed = Workspace.GetAllowedValues(behavior.TargetTermRef);
-        if (kind == BehaviorKind.TRANSITION && allowed.Count >= 2)
-        {
-            behavior.FromValue = allowed[0];
-            behavior.ToValue = allowed[1];
-        }
-        else if (kind == BehaviorKind.SET && allowed.Count >= 1)
-        {
-            behavior.SetValue = allowed[0];
-        }
-
+        AutoPopulateSlotValues(behavior, def);
         Workspace.NotifyChanged();
     }
 
@@ -1187,50 +1246,55 @@
         behavior.TargetTermRef = targetRef ?? string.Empty;
         behavior.FromValue = null;
         behavior.ToValue = null;
-        behavior.SetValue = null;
+        behavior.ProhibitedToValue = null;
+
+        var def = Workspace.FindBehaviorDefinition(behavior.BehaviorDefRef);
+        AutoPopulateSlotValues(behavior, def);
+        Workspace.NotifyChanged();
+    }
+
+    private void AutoPopulateSlotValues(BehaviorNode behavior, BehaviorDefinition? def)
+    {
+        if (def is null || string.IsNullOrWhiteSpace(behavior.TargetTermRef))
+        {
+            return;
+        }
 
         var allowed = Workspace.GetAllowedValues(behavior.TargetTermRef);
-        if (behavior.Kind == BehaviorKind.TRANSITION && allowed.Count >= 2)
+        if (def.RequiresFromValue && def.RequiresToValue && allowed.Count >= 2)
         {
             behavior.FromValue = allowed[0];
             behavior.ToValue = allowed[1];
         }
-        else if (behavior.Kind == BehaviorKind.SET && allowed.Count >= 1)
+        else if (def.RequiresToValue && allowed.Count >= 1)
         {
-            behavior.SetValue = allowed[0];
+            behavior.ToValue = allowed[0];
         }
+        else if (def.RequiresFromValue && allowed.Count >= 1)
+        {
+            behavior.FromValue = allowed[0];
+        }
+    }
 
+    private void OnProhibitedBehaviorChanged(BehaviorNode behavior, string? defId)
+    {
+        behavior.ProhibitedBehaviorDefRef = EmptyToNull(defId);
         Workspace.NotifyChanged();
     }
 
-    private void OnProhibitedActionChanged(BehaviorNode behavior, string? actionStr)
-    {
-        if (Enum.TryParse<BehaviorKind>(actionStr, out var parsed))
-        {
-            behavior.ProhibitedAction = parsed;
-        }
-        else
-        {
-            behavior.ProhibitedAction = null;
-        }
-        Workspace.NotifyChanged();
-    }
+    private IReadOnlyList<ApprovedGlossaryTerm> GetTargetTermsForBehavior(BehaviorDefinition? def) =>
+        def is not null && def.AllowedTargetTypes.Count > 0
+            ? Workspace.GetGlossaryByTypes(def.AllowedTargetTypes.ToArray())
+            : Workspace.GetGlossaryByTypes(
+                ConceptType.DomainObject,
+                ConceptType.Attribute,
+                ConceptType.LifecycleState,
+                ConceptType.StateVariable);
 
-    private IReadOnlyList<ApprovedGlossaryTerm> GetTargetTermsForBehavior(BehaviorKind kind) => kind switch
-    {
-        BehaviorKind.CREATE or BehaviorKind.DELETE => Workspace.GetGlossaryByTypes(ConceptType.DomainObject),
-        BehaviorKind.TRANSITION => Workspace.GetGlossaryByTypes(ConceptType.LifecycleState, ConceptType.StateVariable),
-        BehaviorKind.SET => Workspace.GetGlossaryByTypes(ConceptType.StateVariable, ConceptType.LifecycleState, ConceptType.Attribute),
-        _ => Workspace.GetGlossaryByTypes(ConceptType.DomainObject, ConceptType.Attribute, ConceptType.LifecycleState, ConceptType.StateVariable)
-    };
-
-    private static string GetTargetTypeHint(BehaviorKind kind) => kind switch
-    {
-        BehaviorKind.CREATE or BehaviorKind.DELETE => "DomainObject",
-        BehaviorKind.TRANSITION => "LifecycleState / StateVariable",
-        BehaviorKind.SET => "StateVariable / LifecycleState / Attribute",
-        _ => "DomainObject / Attribute / State"
-    };
+    private static string GetTargetTypeHint(BehaviorDefinition? def) =>
+        def is not null && def.AllowedTargetTypes.Count > 0
+            ? string.Join(" / ", def.AllowedTargetTypes)
+            : "DomainObject / Attribute / State";
 
     private void ActivateEscapeHatch(CanonicalRequirementNode node)
     {

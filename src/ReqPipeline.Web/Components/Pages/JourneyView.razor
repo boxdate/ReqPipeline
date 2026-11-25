@@ -476,11 +476,15 @@
         }
 
         var behavior = req.Behavior;
+        var behaviorDef = Workspace.FindBehaviorDefinition(behavior.BehaviorDefRef);
         var targetTerm = FindTerm(behavior.TargetTermRef);
-        if (behavior.Kind == BehaviorKind.TRANSITION && targetTerm is not null)
+        if (behaviorDef?.Effect == SemanticEffect.MutateState
+            && !string.IsNullOrWhiteSpace(behavior.FromValue)
+            && !string.IsNullOrWhiteSpace(behavior.ToValue)
+            && targetTerm is not null)
         {
-            var fromLabel = FormatValueChip(targetTerm, behavior.FromValue ?? string.Empty);
-            var toLabel = FormatValueChip(targetTerm, behavior.ToValue ?? string.Empty);
+            var fromLabel = FormatValueChip(targetTerm, behavior.FromValue);
+            var toLabel = FormatValueChip(targetTerm, behavior.ToValue);
             if (stepResult.Status == JourneyStepStatus.Passed)
             {
                 return $"{targetTerm.CanonicalName}: {fromLabel} ➔ {toLabel}";
