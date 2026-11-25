@@ -269,7 +269,7 @@
                             <option value="">-- 未選択 --</option>
                             @foreach (var sys in Workspace.GetGlossaryByTypes(ConceptType.System))
                             {
-                                <option value="@sys.Id">@sys.CanonicalName</option>
+                                <option value="@sys.Id">@FormatTermOption(sys)</option>
                             }
                         </select>
                     </div>
@@ -281,7 +281,7 @@
                             <option value="">-- 指定なし --</option>
                             @foreach (var actor in Workspace.GetGlossaryByTypes(ConceptType.Actor))
                             {
-                                <option value="@actor.Id">@actor.CanonicalName</option>
+                                <option value="@actor.Id">@FormatTermOption(actor)</option>
                             }
                         </select>
                     </div>
@@ -293,7 +293,7 @@
                             <option value="">-- 指定なし --</option>
                             @foreach (var evt in Workspace.GetGlossaryByTypes(ConceptType.Event))
                             {
-                                <option value="@evt.Id">@evt.CanonicalName</option>
+                                <option value="@evt.Id">@FormatTermOption(evt)</option>
                             }
                         </select>
                     </div>
@@ -330,7 +330,7 @@
                                             <option value="">-- 状態語彙を選択 --</option>
                                             @foreach (var st in parentStateTerms)
                                             {
-                                                <option value="@st.Id">@st.CanonicalName (@st.ConceptType)</option>
+                                                <option value="@st.Id">@FormatTermOption(st) (@st.ConceptType)</option>
                                             }
                                         </select>
                                     </div>
@@ -358,7 +358,7 @@
                                         <button type="button"
                                                 class="slot-chip slot-chip-value @(activeVal ? "active" : "")"
                                                 @onclick="() => ToggleExpectedValue(clause, val)">
-                                            @val
+                                            @FormatValueOption(clause.StateTermRef, val)
                                         </button>
                                     }
                                 </div>
@@ -577,7 +577,7 @@
                                                 <option value="">-- 状態語彙を選択 --</option>
                                                 @foreach (var st in stateTerms)
                                                 {
-                                                    <option value="@st.Id">@st.CanonicalName (@st.ConceptType)</option>
+                                                    <option value="@st.Id">@FormatTermOption(st) (@st.ConceptType)</option>
                                                 }
                                             </select>
                                         </div>
@@ -598,6 +598,13 @@
                                             </button>
                                         </div>
                                     </div>
+                                    @{
+                                        var stateMetaHint = GetTermMetadataHint(clause.StateTermRef);
+                                    }
+                                    @if (!string.IsNullOrEmpty(stateMetaHint))
+                                    {
+                                        <div class="small text-info mb-1">ℹ @stateMetaHint</div>
+                                    }
 
                                     <div>
                                         <span class="small text-muted d-block mb-1">許容値 (LogicalType閉包):</span>
@@ -614,7 +621,7 @@
                                                     <button type="button"
                                                             class="slot-chip slot-chip-value @(activeVal ? "active" : "")"
                                                             @onclick="() => ToggleExpectedValue(clause, val)">
-                                                        @val
+                                                        @FormatValueOption(clause.StateTermRef, val)
                                                     </button>
                                                 }
                                             </div>
@@ -642,7 +649,7 @@
                                     <option value="">-- 指定なし --</option>
                                     @foreach (var actor in Workspace.GetGlossaryByTypes(ConceptType.Actor))
                                     {
-                                        <option value="@actor.Id">@actor.CanonicalName (@actor.Id)</option>
+                                        <option value="@actor.Id">@FormatTermOption(actor) (@actor.Id)</option>
                                     }
                                 </select>
                             </div>
@@ -657,7 +664,7 @@
                                     <option value="">-- イベントを選択 --</option>
                                     @foreach (var evt in Workspace.GetGlossaryByTypes(ConceptType.Event))
                                     {
-                                        <option value="@evt.Id">@evt.CanonicalName (@evt.Id)</option>
+                                        <option value="@evt.Id">@FormatTermOption(evt) (@evt.Id)</option>
                                     }
                                 </select>
                             </div>
@@ -679,7 +686,7 @@
                                 <option value="">-- システムを選択 --</option>
                                 @foreach (var sys in Workspace.GetGlossaryByTypes(ConceptType.System))
                                 {
-                                    <option value="@sys.Id">@sys.CanonicalName (@sys.Id)</option>
+                                    <option value="@sys.Id">@FormatTermOption(sys) (@sys.Id)</option>
                                 }
                             </select>
                         </div>
@@ -751,17 +758,24 @@
                                     <option value="">-- 対象を選択 --</option>
                                     @foreach (var term in targetCandidates)
                                     {
-                                        <option value="@term.Id">@term.CanonicalName (@term.ConceptType)</option>
+                                        <option value="@term.Id">@FormatTermOption(term) (@term.ConceptType)</option>
                                     }
                                     @if (!string.IsNullOrWhiteSpace(behavior.TargetTermRef)
                                         && !targetCandidates.Any(t => t.Id == behavior.TargetTermRef))
                                     {
                                         var current = Workspace.Document.Glossary.FirstOrDefault(t => t.Id == behavior.TargetTermRef);
                                         <option value="@behavior.TargetTermRef">
-                                            ⚠ @(current is not null ? $"{current.CanonicalName} ({current.ConceptType})" : behavior.TargetTermRef)
+                                            ⚠ @(current is not null ? $"{FormatTermOption(current)} ({current.ConceptType})" : behavior.TargetTermRef)
                                         </option>
                                     }
                                 </select>
+                                @{
+                                    var targetMetaHint = GetTermMetadataHint(behavior.TargetTermRef);
+                                }
+                                @if (!string.IsNullOrEmpty(targetMetaHint))
+                                {
+                                    <div class="small text-info mt-1">ℹ @targetMetaHint</div>
+                                }
                             </div>
 
                             @if (behavior.Kind == BehaviorKind.TRANSITION)
@@ -774,7 +788,7 @@
                                         <option value="">-- 未選択 --</option>
                                         @foreach (var val in targetAllowedValues)
                                         {
-                                            <option value="@val">@val</option>
+                                            <option value="@val">@FormatValueOption(behavior.TargetTermRef, val)</option>
                                         }
                                     </select>
                                 </div>
@@ -786,7 +800,7 @@
                                         <option value="">-- 未選択 --</option>
                                         @foreach (var val in targetAllowedValues)
                                         {
-                                            <option value="@val">@val</option>
+                                            <option value="@val">@FormatValueOption(behavior.TargetTermRef, val)</option>
                                         }
                                     </select>
                                 </div>
@@ -801,7 +815,7 @@
                                         <option value="">-- 未選択 --</option>
                                         @foreach (var val in targetAllowedValues)
                                         {
-                                            <option value="@val">@val</option>
+                                            <option value="@val">@FormatValueOption(behavior.TargetTermRef, val)</option>
                                         }
                                     </select>
                                 </div>
@@ -1239,6 +1253,57 @@
         EscapeReason.ExternalSystemConstraint => "ExternalSystemConstraint (外部システム・法規制制約)",
         _ => r.ToString()
     };
+
+    private static string FormatTermOption(ApprovedGlossaryTerm term)
+    {
+        var display = term.GetDisplayName();
+        return string.Equals(display, term.CanonicalName, StringComparison.Ordinal)
+            ? term.CanonicalName
+            : $"{display} [{term.CanonicalName}]";
+    }
+
+    private string FormatValueOption(string? termRef, string val)
+    {
+        if (string.IsNullOrWhiteSpace(termRef))
+        {
+            return val;
+        }
+
+        var term = Workspace.Document.Glossary.FirstOrDefault(t => string.Equals(t.Id, termRef, StringComparison.Ordinal));
+        if (term is null)
+        {
+            return val;
+        }
+
+        var label = term.LogicalType.GetValueLabel(val);
+        return string.Equals(label, val, StringComparison.Ordinal) ? val : $"{label} ({val})";
+    }
+
+    private string? GetTermMetadataHint(string? termRef)
+    {
+        if (string.IsNullOrWhiteSpace(termRef))
+        {
+            return null;
+        }
+
+        var term = Workspace.Document.Glossary.FirstOrDefault(t => string.Equals(t.Id, termRef, StringComparison.Ordinal));
+        if (term is null)
+        {
+            return null;
+        }
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(term.Unit))
+        {
+            parts.Add($"単位: {term.Unit}");
+        }
+        if (!string.IsNullOrWhiteSpace(term.AbstractionNote))
+        {
+            parts.Add(term.AbstractionNote);
+        }
+
+        return parts.Count == 0 ? null : string.Join(" / ", parts);
+    }
 
     private static string? EmptyToNull(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 

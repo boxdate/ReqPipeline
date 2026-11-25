@@ -174,12 +174,15 @@ public sealed class JapaneseRequirementRenderer
         foreach (var clause in preconditions)
         {
             var stateName = ResolveTermName(clause.StateTermRef, glossaryById, clause.StateTermRef);
+            var valueLabels = clause.ExpectedValues
+                .Select(v => ResolveValueLabel(clause.StateTermRef, v, glossaryById))
+                .ToList();
             var formatted = clause.Operator switch
             {
-                ComparisonOperator.EQ => $"{stateName}が{string.Join("または", clause.ExpectedValues)}",
-                ComparisonOperator.NEQ => $"{stateName}が{string.Join("・", clause.ExpectedValues)}以外",
-                ComparisonOperator.IN => $"{stateName}が[{string.Join("、", clause.ExpectedValues)}]のいずれか",
-                _ => $"{stateName}が{string.Join("、", clause.ExpectedValues)}"
+                ComparisonOperator.EQ => $"{stateName}が{string.Join("または", valueLabels)}",
+                ComparisonOperator.NEQ => $"{stateName}が{string.Join("・", valueLabels)}以外",
+                ComparisonOperator.IN => $"{stateName}が[{string.Join("、", valueLabels)}]のいずれか",
+                _ => $"{stateName}が{string.Join("、", valueLabels)}"
             };
             parts.Add(formatted);
         }
@@ -203,9 +206,9 @@ public sealed class JapaneseRequirementRenderer
         return behavior.Kind switch
         {
             BehaviorKind.CREATE => $"{target}を作成すること",
-            BehaviorKind.SET => $"{target}を{behavior.SetValue}に設定すること",
+            BehaviorKind.SET => $"{target}を{ResolveValueLabel(behavior.TargetTermRef, behavior.SetValue, glossaryById)}に設定すること",
             BehaviorKind.DELETE => $"{target}を削除すること",
-            BehaviorKind.TRANSITION => $"{target}を{behavior.FromValue}から{behavior.ToValue}へ遷移すること",
+            BehaviorKind.TRANSITION => $"{target}を{ResolveValueLabel(behavior.TargetTermRef, behavior.FromValue, glossaryById)}から{ResolveValueLabel(behavior.TargetTermRef, behavior.ToValue, glossaryById)}へ遷移すること",
             BehaviorKind.DISPLAY => $"{target}を表示すること",
             BehaviorKind.PROHIBIT => behavior.ProhibitedAction.HasValue
                 ? $"{target}の{FormatActionNoun(behavior.ProhibitedAction.Value)}を禁止すること"
@@ -232,9 +235,27 @@ public sealed class JapaneseRequirementRenderer
     {
         if (!string.IsNullOrWhiteSpace(termRef) && glossaryById.TryGetValue(termRef, out var term))
         {
-            return term.CanonicalName;
+            return term.GetDisplayName();
         }
 
         return fallback;
+    }
+
+    private static string ResolveValueLabel(
+        string? termRef,
+        string? value,
+        IReadOnlyDictionary<string, ApprovedGlossaryTerm> glossaryById)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        if (!string.IsNullOrWhiteSpace(termRef) && glossaryById.TryGetValue(termRef, out var term))
+        {
+            return term.LogicalType.GetValueLabel(value);
+        }
+
+        return value;
     }
 }

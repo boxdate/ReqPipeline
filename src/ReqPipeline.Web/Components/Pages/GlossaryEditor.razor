@@ -47,10 +47,10 @@
                         <thead class="table-light">
                             <tr>
                                 <th>ID</th>
-                                <th>正規名称</th>
+                                <th>表示名 / 英語シンボル</th>
                                 <th>ConceptType</th>
                                 <th>LogicalType</th>
-                                <th>Namespace</th>
+                                <th>単位</th>
                                 <th class="text-end">操作</th>
                             </tr>
                         </thead>
@@ -61,19 +61,22 @@
                                 <tr class="@(isSelected ? "table-primary" : "")" style="cursor:pointer"
                                     @onclick="() => SelectTerm(term.Id)">
                                     <td class="font-monospace small">@term.Id</td>
-                                    <td class="fw-semibold">@term.CanonicalName</td>
+                                    <td>
+                                        <div class="fw-semibold">@term.GetDisplayName()</div>
+                                        <div class="font-monospace small text-muted">@term.CanonicalName</div>
+                                    </td>
                                     <td><span class="chip-badge chip-type">@term.ConceptType</span></td>
                                     <td class="small">
                                         @if (term.LogicalType.Kind == LogicalTypeKind.Enum)
                                         {
-                                            <span>Enum [@string.Join(", ", term.LogicalType.AllowedValues)]</span>
+                                            <span>Enum [@string.Join(", ", term.LogicalType.AllowedValues.Select(v => FormatValueWithLabel(term.LogicalType, v)))]</span>
                                         }
                                         else
                                         {
                                             <span>@term.LogicalType.Kind</span>
                                         }
                                     </td>
-                                    <td class="small text-muted">@(term.Namespace ?? "-")</td>
+                                    <td class="small text-muted">@(term.Unit ?? "-")</td>
                                     <td class="text-end">
                                         <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2"
                                                 @onclick:stopPropagation="true"
@@ -115,11 +118,21 @@
                                @onchange="e => RenameTermId(editing, e.Value?.ToString())" />
                     </div>
 
-                    <div class="mb-2">
-                        <label class="slot-label">正規名称 (CanonicalName)</label>
-                        <input type="text" class="form-control form-control-sm"
-                               value="@editing.CanonicalName"
-                               @oninput="e => { editing.CanonicalName = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-6">
+                            <label class="slot-label">英語シンボル (CanonicalName)</label>
+                            <input type="text" class="form-control form-control-sm font-monospace"
+                                   placeholder="例: VehicleSpeed"
+                                   value="@editing.CanonicalName"
+                                   @oninput="e => { editing.CanonicalName = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="slot-label">日本語表示名 (DisplayName)</label>
+                            <input type="text" class="form-control form-control-sm"
+                                   placeholder="例: 車速"
+                                   value="@editing.DisplayName"
+                                   @oninput="e => { editing.DisplayName = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                        </div>
                     </div>
 
                     <div class="row g-2 mb-2">
@@ -167,35 +180,100 @@
 
                     @if (editing.LogicalType.Kind == LogicalTypeKind.Boolean)
                     {
-                        <div class="small text-muted mt-2">
-                            許容値: <code>true</code> / <code>false</code>（自動閉包）
+                        <div class="mt-2">
+                            <div class="small text-muted mb-2">
+                                許容値: <code>true</code> / <code>false</code>（自動閉包）— 表示ラベル（任意）:
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text font-monospace">true</span>
+                                        <input type="text" class="form-control" placeholder="例: 有効 / 施錠"
+                                               value="@GetValueLabelInput(editing.LogicalType, "true")"
+                                               @oninput='e => SetValueLabel(editing.LogicalType, "true", e.Value?.ToString())' />
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text font-monospace">false</span>
+                                        <input type="text" class="form-control" placeholder="例: 無効 / 解錠"
+                                               value="@GetValueLabelInput(editing.LogicalType, "false")"
+                                               @oninput='e => SetValueLabel(editing.LogicalType, "false", e.Value?.ToString())' />
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     }
                     else if (editing.LogicalType.Kind == LogicalTypeKind.Enum)
                     {
                         <div class="mt-3">
-                            <label class="slot-label">AllowedValues (Enum 値リスト)</label>
+                            <label class="slot-label">AllowedValues (英語正規値) ＋ ValueLabels (日本語表示)</label>
                             <div class="input-group input-group-sm mb-2">
-                                <input type="text" class="form-control" placeholder="新しい値を入力 (例: Active)"
+                                <input type="text" class="form-control font-monospace" placeholder="英語シンボル (例: HighSpeed)"
                                        @bind="_newEnumValue"
+                                       @onkeydown="e => OnEnumInputKeyDown(e, editing)" />
+                                <input type="text" class="form-control" placeholder="日本語表示 (例: 高速)"
+                                       @bind="_newEnumLabel"
                                        @onkeydown="e => OnEnumInputKeyDown(e, editing)" />
                                 <button type="button" class="btn btn-outline-primary" @onclick="() => AddEnumValue(editing)">
                                     追加
                                 </button>
                             </div>
-                            <div class="chip-group">
+                            <div class="d-flex flex-column gap-1">
                                 @foreach (var val in editing.LogicalType.AllowedValues.ToList())
                                 {
-                                    <span class="slot-chip slot-chip-value active d-inline-flex align-items-center gap-1">
-                                        @val
-                                        <button type="button" class="btn-close btn-close-white" style="font-size: 0.55rem;"
-                                                aria-label="Remove"
-                                                @onclick="() => RemoveEnumValue(editing, val)"></button>
-                                    </span>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text font-monospace" style="min-width: 110px;">@val</span>
+                                        <input type="text" class="form-control" placeholder="日本語表示ラベル (任意)"
+                                               value="@GetValueLabelInput(editing.LogicalType, val)"
+                                               @oninput="e => SetValueLabel(editing.LogicalType, val, e.Value?.ToString())" />
+                                        <button type="button" class="btn btn-outline-danger"
+                                                @onclick="() => RemoveEnumValue(editing, val)">×</button>
+                                    </div>
                                 }
                             </div>
                         </div>
                     }
+
+                    <hr />
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-4">
+                            <label class="slot-label">単位 (Unit)</label>
+                            <input type="text" class="form-control form-control-sm font-monospace" placeholder="例: km/h, ms"
+                                   value="@editing.Unit"
+                                   @oninput="e => { editing.Unit = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value.ToString(); Workspace.NotifyChanged(); }" />
+                        </div>
+                        <div class="col-md-8">
+                            <label class="slot-label">物理抽象化メモ (AbstractionNote)</label>
+                            <input type="text" class="form-control form-control-sm" placeholder="例: 車速 >= 30 km/h を HighSpeed として抽象化"
+                                   value="@editing.AbstractionNote"
+                                   @oninput="e => { editing.AbstractionNote = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value.ToString(); Workspace.NotifyChanged(); }" />
+                        </div>
+                    </div>
+
+                    <div class="mt-2">
+                        <label class="slot-label">禁止語 (DeprecatedLabels)</label>
+                        <div class="input-group input-group-sm mb-2">
+                            <input type="text" class="form-control" placeholder="禁止・非推奨表記を入力 (例: スピード)"
+                                   @bind="_newDeprecatedLabel"
+                                   @onkeydown="e => OnDeprecatedInputKeyDown(e, editing)" />
+                            <button type="button" class="btn btn-outline-danger" @onclick="() => AddDeprecatedLabel(editing)">
+                                追加
+                            </button>
+                        </div>
+                        <div class="chip-group">
+                            @foreach (var label in editing.DeprecatedLabels.ToList())
+                            {
+                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle d-inline-flex align-items-center gap-1 px-2 py-1">
+                                    @label
+                                    <button type="button" class="btn-close" style="font-size: 0.55rem;"
+                                            aria-label="Remove"
+                                            @onclick="() => RemoveDeprecatedLabel(editing, label)"></button>
+                                </span>
+                            }
+                        </div>
+                    </div>
                 </div>
             }
         </div>
@@ -207,6 +285,8 @@
     private ConceptType? _filterType;
     private string? _selectedTermId;
     private string _newEnumValue = string.Empty;
+    private string _newEnumLabel = string.Empty;
+    private string _newDeprecatedLabel = string.Empty;
 
     protected override void OnInitialized()
     {
@@ -231,7 +311,9 @@
         {
             query = query.Where(t =>
                 t.Id.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
-                || t.CanonicalName.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+                || t.CanonicalName.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
+                || t.DisplayName.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
+                || t.Aliases.Any(a => a.Contains(_searchText, StringComparison.OrdinalIgnoreCase)));
         }
 
         return query;
@@ -246,6 +328,8 @@
     {
         _selectedTermId = termId;
         _newEnumValue = string.Empty;
+        _newEnumLabel = string.Empty;
+        _newDeprecatedLabel = string.Empty;
     }
 
     private void CreateNewTerm()
@@ -261,7 +345,8 @@
         var term = new ApprovedGlossaryTerm
         {
             Id = id,
-            CanonicalName = $"新規語彙 {idx}",
+            CanonicalName = $"NewTerm{idx}",
+            DisplayName = $"新規語彙 {idx}",
             ConceptType = _filterType ?? ConceptType.DomainObject,
             LogicalType = new LogicalTypeDefinition { Kind = LogicalTypeKind.None }
         };
@@ -307,6 +392,10 @@
         {
             term.LogicalType.AllowedValues.Clear();
         }
+        foreach (var invalidKey in term.LogicalType.ValueLabels.Keys.Where(k => !term.LogicalType.IsValidValue(k)).ToList())
+        {
+            term.LogicalType.ValueLabels.Remove(invalidKey);
+        }
         Workspace.NotifyChanged();
     }
 
@@ -316,7 +405,13 @@
         if (!string.IsNullOrEmpty(trimmed) && !term.LogicalType.AllowedValues.Contains(trimmed, StringComparer.Ordinal))
         {
             term.LogicalType.AllowedValues.Add(trimmed);
+            var trimmedLabel = _newEnumLabel.Trim();
+            if (!string.IsNullOrEmpty(trimmedLabel))
+            {
+                term.LogicalType.ValueLabels[trimmed] = trimmedLabel;
+            }
             _newEnumValue = string.Empty;
+            _newEnumLabel = string.Empty;
             Workspace.NotifyChanged();
         }
     }
@@ -332,6 +427,54 @@
     private void RemoveEnumValue(ApprovedGlossaryTerm term, string val)
     {
         term.LogicalType.AllowedValues.Remove(val);
+        term.LogicalType.ValueLabels.Remove(val);
+        Workspace.NotifyChanged();
+    }
+
+    private static string GetValueLabelInput(LogicalTypeDefinition logicalType, string key) =>
+        logicalType.ValueLabels.TryGetValue(key, out var label) ? label : string.Empty;
+
+    private void SetValueLabel(LogicalTypeDefinition logicalType, string key, string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            logicalType.ValueLabels.Remove(key);
+        }
+        else
+        {
+            logicalType.ValueLabels[key] = label.Trim();
+        }
+        Workspace.NotifyChanged();
+    }
+
+    private static string FormatValueWithLabel(LogicalTypeDefinition logicalType, string val)
+    {
+        var label = logicalType.GetValueLabel(val);
+        return string.Equals(label, val, StringComparison.Ordinal) ? val : $"{label}({val})";
+    }
+
+    private void AddDeprecatedLabel(ApprovedGlossaryTerm term)
+    {
+        var trimmed = _newDeprecatedLabel.Trim();
+        if (!string.IsNullOrEmpty(trimmed) && !term.DeprecatedLabels.Contains(trimmed, StringComparer.Ordinal))
+        {
+            term.DeprecatedLabels.Add(trimmed);
+            _newDeprecatedLabel = string.Empty;
+            Workspace.NotifyChanged();
+        }
+    }
+
+    private void OnDeprecatedInputKeyDown(KeyboardEventArgs e, ApprovedGlossaryTerm term)
+    {
+        if (e.Key == "Enter")
+        {
+            AddDeprecatedLabel(term);
+        }
+    }
+
+    private void RemoveDeprecatedLabel(ApprovedGlossaryTerm term, string label)
+    {
+        term.DeprecatedLabels.Remove(label);
         Workspace.NotifyChanged();
     }
 

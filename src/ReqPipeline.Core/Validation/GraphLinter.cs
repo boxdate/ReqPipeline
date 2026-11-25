@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using ReqPipeline.Core.Domain;
 
 namespace ReqPipeline.Core.Validation;
@@ -26,6 +27,11 @@ public sealed class GraphLinter
     public const string RuleTopLevelRationaleMissing = "LINT-006";
     public const string RulePendingEscapeRecord = "LINT-007";
     public const string RuleRequirementConflict = "LINT-008";
+    public const string RuleGlossarySymbolConvention = "LINT-009";
+    public const string RuleGlossaryValueLabelsIntegrity = "LINT-010";
+    public const string RuleDeprecatedLabelUsage = "LINT-011";
+
+    private static readonly Regex AsciiSymbolRegex = new("^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.Compiled);
 
     public static List<LintDiagnostic> Lint(KnowledgeGraphDocument document)
     {
@@ -107,6 +113,8 @@ public sealed class GraphLinter
         }
 
         ValidateRequirementConflicts(document.Requirements, glossaryById, diagnostics);
+        ValidateGlossaryDefinitions(document.Glossary, diagnostics);
+        ValidateDeprecatedLabelUsage(document, diagnostics);
 
         return diagnostics;
     }
@@ -617,6 +625,164 @@ public sealed class GraphLinter
         }
 
         return null;
+    }
+
+    private static void ValidateGlossaryDefinitions(
+        List<ApprovedGlossaryTerm> glossary,
+        List<LintDiagnostic> diagnostics)
+    {
+        var seenCanonicalNames = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var term in glossary)
+        {
+            var targetId = string.IsNullOrWhiteSpace(term.Id) ? term.CanonicalName : term.Id;
+
+            if (string.IsNullOrWhiteSpace(term.CanonicalName) || !AsciiSymbolRegex.IsMatch(term.CanonicalName))
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Error,
+                    RuleGlossarySymbolConvention,
+                    targetId,
+                    $"Glossary term '{targetId}' has invalid CanonicalName '{term.CanonicalName}'. Expected ASCII symbol matching ^[A-Za-z][A-Za-z0-9_]*$."));
+            }
+            else if (!seenCanonicalNames.Add(term.CanonicalName))
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Error,
+                    RuleGlossarySymbolConvention,
+                    targetId,
+                    $"Glossary term '{targetId}' has duplicate CanonicalName '{term.CanonicalName}'."));
+            }
+
+            if (term.LogicalType.Kind == LogicalTypeKind.Enum)
+            {
+                var seenValues = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var val in term.LogicalType.AllowedValues)
+                {
+                    if (string.IsNullOrWhiteSpace(val) || !AsciiSymbolRegex.IsMatch(val))
+                    {
+                        diagnostics.Add(new LintDiagnostic(
+                            LintSeverity.Error,
+                            RuleGlossarySymbolConvention,
+                            targetId,
+                            $"Glossary term '{targetId}' has invalid AllowedValue '{val}'. Expected ASCII symbol matching ^[A-Za-z][A-Za-z0-9_]*$."));
+                    }
+                    else if (!seenValues.Add(val))
+                    {
+                        diagnostics.Add(new LintDiagnostic(
+                            LintSeverity.Error,
+                            RuleGlossarySymbolConvention,
+                            targetId,
+                            $"Glossary term '{targetId}' has duplicate AllowedValue '{val}'."));
+                    }
+                }
+            }
+
+            foreach (var key in term.LogicalType.ValueLabels.Keys)
+            {
+                if (!term.LogicalType.IsValidValue(key))
+                {
+                    diagnostics.Add(new LintDiagnostic(
+                        LintSeverity.Error,
+                        RuleGlossaryValueLabelsIntegrity,
+                        targetId,
+                        $"Glossary term '{targetId}' has ValueLabels key '{key}' which is not valid for LogicalType ({FormatLogicalDomain(term.LogicalType)})."));
+                }
+            }
+        }
+    }
+
+    private static void ValidateDeprecatedLabelUsage(
+        KnowledgeGraphDocument document,
+        List<LintDiagnostic> diagnostics)
+    {
+        var deprecatedEntries = new List<(string Label, ApprovedGlossaryTerm Term)>();
+        foreach (var term in document.Glossary)
+        {
+            foreach (var label in term.DeprecatedLabels)
+            {
+                if (!string.IsNullOrWhiteSpace(label))
+                {
+                    deprecatedEntries.Add((label, term));
+                }
+            }
+        }
+
+        if (deprecatedEntries.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var term in document.Glossary)
+        {
+            var targetId = string.IsNullOrWhiteSpace(term.Id) ? term.CanonicalName : term.Id;
+            foreach (var (label, sourceTerm) in deprecatedEntries)
+            {
+                if (!string.IsNullOrWhiteSpace(term.DisplayName)
+                    && term.DisplayName.Contains(label, StringComparison.Ordinal))
+                {
+                    diagnostics.Add(new LintDiagnostic(
+                        LintSeverity.Error,
+                        RuleDeprecatedLabelUsage,
+                        targetId,
+                        $"Glossary term '{targetId}' DisplayName '{term.DisplayName}' contains deprecated label '{label}' (defined on '{sourceTerm.Id}')."));
+                }
+
+                foreach (var alias in term.Aliases)
+                {
+                    if (!string.IsNullOrWhiteSpace(alias) && alias.Contains(label, StringComparison.Ordinal))
+                    {
+                        diagnostics.Add(new LintDiagnostic(
+                            LintSeverity.Error,
+                            RuleDeprecatedLabelUsage,
+                            targetId,
+                            $"Glossary term '{targetId}' Alias '{alias}' contains deprecated label '{label}' (defined on '{sourceTerm.Id}')."));
+                    }
+                }
+            }
+        }
+
+        foreach (var rationale in document.Rationales)
+        {
+            CheckTextForDeprecatedLabels(rationale.Id, "Rationale.Title", rationale.Title, deprecatedEntries, diagnostics);
+            CheckTextForDeprecatedLabels(rationale.Id, "Rationale.Description", rationale.Description, deprecatedEntries, diagnostics);
+        }
+
+        foreach (var req in document.Requirements)
+        {
+            CheckTextForDeprecatedLabels(req.Id, "Requirement.Title", req.Title, deprecatedEntries, diagnostics);
+            CheckTextForDeprecatedLabels(req.Id, "Requirement.Summary", req.Summary, deprecatedEntries, diagnostics);
+        }
+
+        foreach (var escape in document.EscapeRecords)
+        {
+            CheckTextForDeprecatedLabels(escape.Id, "FreeTextEscapeRecord.FreeText", escape.FreeText, deprecatedEntries, diagnostics);
+        }
+    }
+
+    private static void CheckTextForDeprecatedLabels(
+        string targetId,
+        string fieldName,
+        string? text,
+        List<(string Label, ApprovedGlossaryTerm Term)> deprecatedEntries,
+        List<LintDiagnostic> diagnostics)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        foreach (var (label, sourceTerm) in deprecatedEntries)
+        {
+            if (text.Contains(label, StringComparison.Ordinal))
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Error,
+                    RuleDeprecatedLabelUsage,
+                    targetId,
+                    $"{fieldName} on '{targetId}' contains deprecated label '{label}' (use '{sourceTerm.GetDisplayName()}' / '{sourceTerm.CanonicalName}' instead)."));
+            }
+        }
     }
 
     private static string FormatLogicalDomain(LogicalTypeDefinition logicalType) => logicalType.Kind switch
