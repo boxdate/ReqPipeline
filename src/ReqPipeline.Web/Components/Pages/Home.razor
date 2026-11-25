@@ -844,7 +844,23 @@
 
     <!-- ==================== RIGHT PANE: PREVIEW & LINT ==================== -->
     <aside class="wb-pane wb-pane-right">
-        <div class="wb-section-title">Japanese Real-Time Preview</div>
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="wb-section-title mb-0">Real-Time Preview</div>
+            <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn @(_previewMode == "Both" ? "btn-dark" : "btn-outline-secondary")"
+                        @onclick='() => _previewMode = "Both"'>
+                    並列
+                </button>
+                <button type="button" class="btn @(_previewMode == "Japanese" ? "btn-dark" : "btn-outline-secondary")"
+                        @onclick='() => _previewMode = "Japanese"'>
+                    日本語
+                </button>
+                <button type="button" class="btn @(_previewMode == "English" ? "btn-dark" : "btn-outline-secondary")"
+                        @onclick='() => _previewMode = "English"'>
+                    English
+                </button>
+            </div>
+        </div>
 
         @if (selectedRationale is not null)
         {
@@ -861,18 +877,29 @@
         }
         else if (selected is null)
         {
-            <div class="preview-box text-muted small">要求を選択するとリアルタイム日本語プレビューが表示されます。</div>
+            <div class="preview-box text-muted small">要求を選択するとリアルタイムプレビューが表示されます。</div>
         }
         else if (selected.NodeKind == RequirementNodeKind.Atomic)
         {
             <div class="preview-box">
-                <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center justify-content-between mb-2">
                     <span class="badge bg-primary">@selected.EarsPattern</span>
                     <span class="small text-muted font-monospace">@selected.Id</span>
                 </div>
-                <p class="preview-sentence" data-testid="japanese-preview">
-                    @Workspace.RenderJapanesePreview(selected)
-                </p>
+                @if (_previewMode is "Both" or "Japanese")
+                {
+                    <div class="small text-muted mb-1">日本語 View</div>
+                    <p class="preview-sentence mb-2" data-testid="japanese-preview">
+                        @Workspace.RenderJapanesePreview(selected)
+                    </p>
+                }
+                @if (_previewMode is "Both" or "English")
+                {
+                    <div class="small text-muted mb-1">Canonical EARS (English)</div>
+                    <p class="font-monospace small bg-light border rounded p-2 mb-0" data-testid="english-preview">
+                        @Workspace.RenderEnglishPreview(selected)
+                    </p>
+                }
             </div>
         }
         else
@@ -905,7 +932,15 @@
                         @foreach (var c in childAtomics)
                         {
                             <li class="mb-2">
-                                <strong>[@c.Id]</strong> @Workspace.RenderJapanesePreview(c)
+                                <strong>[@c.Id]</strong>
+                                @if (_previewMode is "Both" or "Japanese")
+                                {
+                                    <div>@Workspace.RenderJapanesePreview(c)</div>
+                                }
+                                @if (_previewMode is "Both" or "English")
+                                {
+                                    <div class="font-monospace text-muted small mt-1">@Workspace.RenderEnglishPreview(c)</div>
+                                }
                             </li>
                         }
                     </ol>
@@ -963,6 +998,7 @@
 
 @code {
     private bool _showAllDiagnostics;
+    private string _previewMode = "Both";
 
     protected override void OnInitialized()
     {

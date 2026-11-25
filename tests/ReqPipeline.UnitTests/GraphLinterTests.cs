@@ -402,8 +402,8 @@ public class GraphLinterTests
 
         Assert.Equal(2, lint008.Count);
         Assert.All(lint008, d => Assert.Equal(LintSeverity.Error, d.Severity));
-        Assert.Contains(lint008, d => d.TargetId == "REQ-DEL-PROHIBIT" && d.Message.Contains("REQ-DEL-ALLOW") && d.Message.Contains("許可と禁止の矛盾"));
-        Assert.Contains(lint008, d => d.TargetId == "REQ-DEL-ALLOW" && d.Message.Contains("REQ-DEL-PROHIBIT") && d.Message.Contains("許可と禁止の矛盾"));
+        Assert.Contains(lint008, d => d.TargetId == "REQ-DEL-PROHIBIT" && d.Message.Contains("REQ-DEL-ALLOW") && d.Message.Contains("allow vs prohibit contradiction"));
+        Assert.Contains(lint008, d => d.TargetId == "REQ-DEL-ALLOW" && d.Message.Contains("REQ-DEL-PROHIBIT") && d.Message.Contains("allow vs prohibit contradiction"));
     }
 
     [Fact]
@@ -544,8 +544,8 @@ public class GraphLinterTests
 
         Assert.Equal(2, lint008.Count);
         Assert.All(lint008, d => Assert.Equal(LintSeverity.Error, d.Severity));
-        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-A" && d.Message.Contains("REQ-TRANS-B") && d.Message.Contains("遷移先の競合"));
-        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-B" && d.Message.Contains("REQ-TRANS-A") && d.Message.Contains("遷移先の競合"));
+        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-A" && d.Message.Contains("REQ-TRANS-B") && d.Message.Contains("conflicting transition targets"));
+        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-B" && d.Message.Contains("REQ-TRANS-A") && d.Message.Contains("conflicting transition targets"));
     }
 
     [Fact]

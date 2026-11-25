@@ -453,13 +453,13 @@ public sealed class GraphLinter
                     LintSeverity.Error,
                     RuleRequirementConflict,
                     a.Id,
-                    $"要求 [{b.Id}] と条件・トリガーが重複し、動作が衝突しています（{conflictReason}）。"));
+                    $"Conflicts with requirement '{b.Id}' under overlapping conditions and trigger ({conflictReason})."));
 
                 diagnostics.Add(new LintDiagnostic(
                     LintSeverity.Error,
                     RuleRequirementConflict,
                     b.Id,
-                    $"要求 [{a.Id}] と条件・トリガーが重複し、動作が衝突しています（{conflictReason}）。"));
+                    $"Conflicts with requirement '{a.Id}' under overlapping conditions and trigger ({conflictReason})."));
             }
         }
     }
@@ -577,13 +577,13 @@ public sealed class GraphLinter
 
             if (prohibit.ProhibitedAction is null || prohibit.ProhibitedAction == allow.Kind)
             {
-                return "許可と禁止の矛盾";
+                return "allow vs prohibit contradiction";
             }
 
             return null;
         }
 
-        // 2. 値の非決定的な衝突 (TRANSITION / SET)
+        // 2. Non-deterministic value conflict (TRANSITION / SET)
         if (a.Kind == BehaviorKind.TRANSITION && b.Kind == BehaviorKind.TRANSITION)
         {
             var fromOverlaps = string.IsNullOrWhiteSpace(a.FromValue)
@@ -596,7 +596,7 @@ public sealed class GraphLinter
 
             if (fromOverlaps && toDiffers)
             {
-                return "遷移先の競合";
+                return "conflicting transition targets";
             }
         }
         else if (a.Kind == BehaviorKind.SET && b.Kind == BehaviorKind.SET)
@@ -607,7 +607,7 @@ public sealed class GraphLinter
 
             if (setDiffers)
             {
-                return "設定値の競合";
+                return "conflicting set values";
             }
         }
         else if ((a.Kind == BehaviorKind.SET && b.Kind == BehaviorKind.TRANSITION)
@@ -620,7 +620,7 @@ public sealed class GraphLinter
                 && !string.IsNullOrWhiteSpace(transNode.ToValue)
                 && !string.Equals(setNode.SetValue, transNode.ToValue, StringComparison.Ordinal))
             {
-                return "設定値と遷移先の競合";
+                return "conflicting set value and transition target";
             }
         }
 

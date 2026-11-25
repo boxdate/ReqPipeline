@@ -153,6 +153,16 @@ public sealed class WorkspaceStateService
         return JapaneseRequirementRenderer.Render(node, Document.Glossary, Document.EscapeRecords);
     }
 
+    public string RenderEnglishPreview(CanonicalRequirementNode node)
+    {
+        if (node.NodeKind != RequirementNodeKind.Atomic)
+        {
+            return string.Empty;
+        }
+
+        return EnglishRequirementRenderer.Render(node, Document.Glossary, Document.EscapeRecords);
+    }
+
     public IReadOnlyList<LintDiagnostic> GetDiagnosticsForRequirement(string requirementId)
     {
         var relatedEscapeIds = Document.EscapeRecords

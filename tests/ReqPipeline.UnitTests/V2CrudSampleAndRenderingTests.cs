@@ -97,6 +97,30 @@ public class V2CrudSampleAndRenderingTests
         Assert.Contains("### [REQ-002] 管理者以外の利用者による顧客削除の防止", markdown);
         Assert.Contains("管理者権限（Admin）を持たない利用者が顧客の削除を試みた場合、顧客管理システムはその削除操作を禁止すること。", markdown);
         Assert.Contains("1. **[REQ-002-1] 管理者以外の顧客削除禁止** (`UnwantedBehavior`): もしユーザーロールが管理者以外であり、利用者による顧客削除要求が発生したならば、顧客管理システムは、顧客の削除を禁止すること。", markdown);
+        Assert.Contains("*Canonical EARS:* `If UserRole is not Admin and User triggers CustomerDeleteRequested, then the CustomerManagementSystem shall prohibit DELETE on Customer.`", markdown);
+    }
+
+    [Fact]
+    public void CrudSampleJson_RendersExpectedEnglishEarsSentences()
+    {
+        var doc = KnowledgeGraphDocument.FromJson(File.ReadAllText(GetSamplePath()));
+        var reqById = doc.Requirements.ToDictionary(r => r.Id);
+
+        Assert.Equal(
+            "When User triggers CustomerCreateRequested, the CustomerManagementSystem shall immediately create Customer.",
+            EnglishRequirementRenderer.Render(reqById["REQ-001-1"], doc.Glossary));
+
+        Assert.Equal(
+            "When User triggers CustomerListViewRequested, the CustomerManagementSystem shall display CustomerList.",
+            EnglishRequirementRenderer.Render(reqById["REQ-001-2"], doc.Glossary));
+
+        Assert.Equal(
+            "While ScreenState is List, when User triggers CustomerSelected, the CustomerManagementSystem shall transition ScreenState from List to Detail.",
+            EnglishRequirementRenderer.Render(reqById["REQ-001-3"], doc.Glossary));
+
+        Assert.Equal(
+            "If UserRole is not Admin and User triggers CustomerDeleteRequested, then the CustomerManagementSystem shall prohibit DELETE on Customer.",
+            EnglishRequirementRenderer.Render(reqById["REQ-002-1"], doc.Glossary));
     }
 
     [Fact]
