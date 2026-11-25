@@ -29,6 +29,15 @@ public sealed class UsdmMarkdownRenderer
             }
         }
 
+        var behaviorCatalogById = new Dictionary<string, BehaviorDefinition>(StringComparer.Ordinal);
+        foreach (var def in document.BehaviorCatalog)
+        {
+            if (!string.IsNullOrWhiteSpace(def.BehaviorDefId))
+            {
+                behaviorCatalogById.TryAdd(def.BehaviorDefId, def);
+            }
+        }
+
         var childrenByParent = document.Requirements
             .Where(r => !string.IsNullOrWhiteSpace(r.ParentRequirementId))
             .GroupBy(r => r.ParentRequirementId!, StringComparer.Ordinal)
@@ -58,7 +67,7 @@ public sealed class UsdmMarkdownRenderer
             foreach (var req in linkedTopLevels)
             {
                 renderedTopLevelIds.Add(req.Id);
-                RenderRequirementHierarchy(sb, req, childrenByParent, glossaryById, document.EscapeRecords);
+                RenderRequirementHierarchy(sb, req, childrenByParent, glossaryById, behaviorCatalogById, document.EscapeRecords);
             }
         }
 
@@ -72,7 +81,7 @@ public sealed class UsdmMarkdownRenderer
             sb.AppendLine();
             foreach (var req in orphanTopLevels)
             {
-                RenderRequirementHierarchy(sb, req, childrenByParent, glossaryById, document.EscapeRecords);
+                RenderRequirementHierarchy(sb, req, childrenByParent, glossaryById, behaviorCatalogById, document.EscapeRecords);
             }
         }
 
@@ -84,6 +93,7 @@ public sealed class UsdmMarkdownRenderer
         CanonicalRequirementNode req,
         Dictionary<string, List<CanonicalRequirementNode>> childrenByParent,
         Dictionary<string, ApprovedGlossaryTerm> glossaryById,
+        Dictionary<string, BehaviorDefinition> behaviorCatalogById,
         List<FreeTextEscapeRecord> escapeRecords)
     {
         if (req.NodeKind == RequirementNodeKind.Composite)
@@ -104,15 +114,15 @@ public sealed class UsdmMarkdownRenderer
                 {
                     if (child.NodeKind == RequirementNodeKind.Atomic)
                     {
-                        var jaSentence = JapaneseRequirementRenderer.Render(child, glossaryById, escapeRecords);
-                        var enSentence = EnglishRequirementRenderer.Render(child, glossaryById, escapeRecords);
+                        var jaSentence = JapaneseRequirementRenderer.Render(child, glossaryById, escapeRecords, behaviorCatalogById);
+                        var enSentence = EnglishRequirementRenderer.Render(child, glossaryById, escapeRecords, behaviorCatalogById);
                         sb.AppendLine($"{step}. **[{child.Id}] {child.Title}** (`{child.EarsPattern}`): {jaSentence}");
                         sb.AppendLine($"   - *Canonical EARS:* `{enSentence}`");
                         step++;
                     }
                     else
                     {
-                        RenderRequirementHierarchy(sb, child, childrenByParent, glossaryById, escapeRecords);
+                        RenderRequirementHierarchy(sb, child, childrenByParent, glossaryById, behaviorCatalogById, escapeRecords);
                     }
                 }
                 sb.AppendLine();
@@ -120,8 +130,8 @@ public sealed class UsdmMarkdownRenderer
         }
         else
         {
-            var jaSentence = JapaneseRequirementRenderer.Render(req, glossaryById, escapeRecords);
-            var enSentence = EnglishRequirementRenderer.Render(req, glossaryById, escapeRecords);
+            var jaSentence = JapaneseRequirementRenderer.Render(req, glossaryById, escapeRecords, behaviorCatalogById);
+            var enSentence = EnglishRequirementRenderer.Render(req, glossaryById, escapeRecords, behaviorCatalogById);
             sb.AppendLine($"- **[{req.Id}] {req.Title}** (`{req.EarsPattern}`): {jaSentence}");
             sb.AppendLine($"  - *Canonical EARS:* `{enSentence}`");
             sb.AppendLine();

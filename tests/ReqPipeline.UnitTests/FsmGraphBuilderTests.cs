@@ -52,6 +52,33 @@ public class FsmGraphBuilderTests
                 }
             }
         ],
+        BehaviorCatalog =
+        [
+            new BehaviorDefinition
+            {
+                BehaviorDefId = "BEH-TRANSITION",
+                CanonicalLabel = "transition",
+                JapaneseLabel = "遷移",
+                Effect = SemanticEffect.MutateState,
+                AllowedTargetTypes = [ConceptType.LifecycleState],
+                RequiresFromValue = true,
+                RequiresToValue = true,
+                JapaneseTemplate = "{target}を{from}から{to}へ遷移すること",
+                EnglishTemplate = "transition {target} from {from} to {to}"
+            },
+            new BehaviorDefinition
+            {
+                BehaviorDefId = "BEH-SET",
+                CanonicalLabel = "set",
+                JapaneseLabel = "設定",
+                Effect = SemanticEffect.MutateState,
+                AllowedTargetTypes = [ConceptType.StateVariable, ConceptType.LifecycleState],
+                RequiresFromValue = false,
+                RequiresToValue = true,
+                JapaneseTemplate = "{target}を{to}に設定すること",
+                EnglishTemplate = "set {target} to {to}"
+            }
+        ],
         Requirements =
         [
             new CanonicalRequirementNode
@@ -66,7 +93,7 @@ public class FsmGraphBuilderTests
                 TriggerEventRef = "TERM-EVT-003",
                 Behavior = new BehaviorNode
                 {
-                    Kind = BehaviorKind.TRANSITION,
+                    BehaviorDefRef = "BEH-TRANSITION",
                     TargetTermRef = "TERM-LC-001",
                     FromValue = "List",
                     ToValue = "Detail"
@@ -165,7 +192,7 @@ public class FsmGraphBuilderTests
             TriggerEventRef = "TERM-EVT-003",
             Behavior = new BehaviorNode
             {
-                Kind = BehaviorKind.TRANSITION,
+                BehaviorDefRef = "BEH-TRANSITION",
                 TargetTermRef = "TERM-LC-001",
                 FromValue = "Detail",
                 ToValue = "List"
@@ -180,6 +207,33 @@ public class FsmGraphBuilderTests
         Assert.Equal(1, detail.OutgoingCount);
         Assert.Equal(1, list.IncomingCount);
         Assert.Equal(2, fsm.Transitions.Count);
+    }
+
+    [Fact]
+    public void Build_MutateStateWithoutFromValue_IsExcludedFromFsmEdges()
+    {
+        var doc = CreateIncompleteFsmDocument();
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-SET-CREATE",
+            Title = "作成画面へ強制設定",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-001",
+            RationaleRefs = ["RAT-001"],
+            SubjectSystemRef = "TERM-SYS-001",
+            Behavior = new BehaviorNode
+            {
+                BehaviorDefRef = "BEH-SET",
+                TargetTermRef = "TERM-LC-001",
+                FromValue = null,
+                ToValue = "Create"
+            }
+        });
+
+        var fsm = Assert.Single(FsmGraphBuilder.Build(doc));
+        var transition = Assert.Single(fsm.Transitions);
+        Assert.Equal("REQ-001-3", transition.RequirementId);
+        Assert.False(fsm.States.Single(s => s.Value == "Create").IsReachable);
     }
 
     [Fact]

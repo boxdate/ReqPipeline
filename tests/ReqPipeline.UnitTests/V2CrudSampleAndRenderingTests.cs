@@ -32,6 +32,7 @@ public class V2CrudSampleAndRenderingTests
         Assert.Equal("DOC-CRUD-001", doc.DocumentId);
         Assert.Equal(2, doc.Rationales.Count);
         Assert.Equal(15, doc.Glossary.Count);
+        Assert.Equal(6, doc.BehaviorCatalog.Count);
         Assert.Equal(11, doc.Requirements.Count);
         Assert.Equal(2, doc.Journeys.Count);
 
@@ -39,11 +40,14 @@ public class V2CrudSampleAndRenderingTests
         Assert.Contains("\"conceptType\": \"LifecycleState\"", serialized);
         Assert.Contains("\"earsPattern\": \"EventDriven\"", serialized);
         Assert.Contains("\"earsPattern\": \"UnwantedBehavior\"", serialized);
-        Assert.Contains("\"kind\": \"TRANSITION\"", serialized);
-        Assert.Contains("\"kind\": \"PROHIBIT\"", serialized);
+        Assert.Contains("\"effect\": \"MutateState\"", serialized);
+        Assert.Contains("\"behaviorDefRef\": \"BEH-TRANSITION\"", serialized);
+        Assert.Contains("\"behaviorDefRef\": \"BEH-PROHIBIT\"", serialized);
+        Assert.Contains("\"prohibitedBehaviorDefRef\": \"BEH-DELETE\"", serialized);
         Assert.Contains("\"timing\": \"IMMEDIATE\"", serialized);
 
         var roundTripped = KnowledgeGraphDocument.FromJson(serialized);
+        Assert.Equal(doc.BehaviorCatalog.Count, roundTripped.BehaviorCatalog.Count);
         Assert.Equal(doc.Requirements.Count, roundTripped.Requirements.Count);
         Assert.Equal(doc.Journeys.Count, roundTripped.Journeys.Count);
     }
@@ -67,19 +71,19 @@ public class V2CrudSampleAndRenderingTests
 
         Assert.Equal(
             "利用者による顧客登録要求が発生したとき、顧客管理システムは、即座に顧客を作成すること。",
-            JapaneseRequirementRenderer.Render(reqById["REQ-001-1"], doc.Glossary));
+            JapaneseRequirementRenderer.Render(reqById["REQ-001-1"], doc.Glossary, doc.EscapeRecords, doc.BehaviorCatalog));
 
         Assert.Equal(
             "利用者による顧客一覧画面表示要求が発生したとき、顧客管理システムは、顧客一覧を表示すること。",
-            JapaneseRequirementRenderer.Render(reqById["REQ-001-2"], doc.Glossary));
+            JapaneseRequirementRenderer.Render(reqById["REQ-001-2"], doc.Glossary, doc.EscapeRecords, doc.BehaviorCatalog));
 
         Assert.Equal(
             "画面状態が一覧の状態で、利用者による顧客選択操作が発生したとき、顧客管理システムは、画面状態を一覧から詳細へ遷移すること。",
-            JapaneseRequirementRenderer.Render(reqById["REQ-001-3"], doc.Glossary));
+            JapaneseRequirementRenderer.Render(reqById["REQ-001-3"], doc.Glossary, doc.EscapeRecords, doc.BehaviorCatalog));
 
         Assert.Equal(
             "もしユーザーロールが管理者以外であり、利用者による顧客削除要求が発生したならば、顧客管理システムは、顧客の削除を禁止すること。",
-            JapaneseRequirementRenderer.Render(reqById["REQ-002-1"], doc.Glossary));
+            JapaneseRequirementRenderer.Render(reqById["REQ-002-1"], doc.Glossary, doc.EscapeRecords, doc.BehaviorCatalog));
     }
 
     [Fact]
@@ -100,7 +104,7 @@ public class V2CrudSampleAndRenderingTests
         Assert.Contains("### [REQ-002] 管理者以外の利用者による顧客削除の防止", markdown);
         Assert.Contains("管理者権限（Admin）を持たない利用者が顧客の削除を試みた場合、顧客管理システムはその削除操作を禁止すること。", markdown);
         Assert.Contains("1. **[REQ-002-1] 管理者以外の顧客削除禁止** (`UnwantedBehavior`): もしユーザーロールが管理者以外であり、利用者による顧客削除要求が発生したならば、顧客管理システムは、顧客の削除を禁止すること。", markdown);
-        Assert.Contains("*Canonical EARS:* `If UserRole is not Admin and User triggers CustomerDeleteRequested, then the CustomerManagementSystem shall prohibit DELETE on Customer.`", markdown);
+        Assert.Contains("*Canonical EARS:* `If UserRole is not Admin and User triggers CustomerDeleteRequested, then the CustomerManagementSystem shall prohibit delete on Customer.`", markdown);
     }
 
     [Fact]
@@ -111,19 +115,19 @@ public class V2CrudSampleAndRenderingTests
 
         Assert.Equal(
             "When User triggers CustomerCreateRequested, the CustomerManagementSystem shall immediately create Customer.",
-            EnglishRequirementRenderer.Render(reqById["REQ-001-1"], doc.Glossary));
+            EnglishRequirementRenderer.Render(reqById["REQ-001-1"], doc.Glossary, doc.EscapeRecords, doc.BehaviorCatalog));
 
         Assert.Equal(
             "When User triggers CustomerListViewRequested, the CustomerManagementSystem shall display CustomerList.",
-            EnglishRequirementRenderer.Render(reqById["REQ-001-2"], doc.Glossary));
+            EnglishRequirementRenderer.Render(reqById["REQ-001-2"], doc.Glossary, doc.EscapeRecords, doc.BehaviorCatalog));
 
         Assert.Equal(
             "While ScreenState is List, when User triggers CustomerSelected, the CustomerManagementSystem shall transition ScreenState from List to Detail.",
-            EnglishRequirementRenderer.Render(reqById["REQ-001-3"], doc.Glossary));
+            EnglishRequirementRenderer.Render(reqById["REQ-001-3"], doc.Glossary, doc.EscapeRecords, doc.BehaviorCatalog));
 
         Assert.Equal(
-            "If UserRole is not Admin and User triggers CustomerDeleteRequested, then the CustomerManagementSystem shall prohibit DELETE on Customer.",
-            EnglishRequirementRenderer.Render(reqById["REQ-002-1"], doc.Glossary));
+            "If UserRole is not Admin and User triggers CustomerDeleteRequested, then the CustomerManagementSystem shall prohibit delete on Customer.",
+            EnglishRequirementRenderer.Render(reqById["REQ-002-1"], doc.Glossary, doc.EscapeRecords, doc.BehaviorCatalog));
     }
 
     [Fact]
@@ -156,15 +160,50 @@ public class V2CrudSampleAndRenderingTests
             }
         };
 
+        var catalog = new List<BehaviorDefinition>
+        {
+            new()
+            {
+                BehaviorDefId = "BEH-DISPLAY",
+                CanonicalLabel = "display",
+                JapaneseLabel = "表示",
+                Effect = SemanticEffect.EmitAction,
+                AllowedTargetTypes = [ConceptType.DomainObject],
+                JapaneseTemplate = "{target}を表示すること",
+                EnglishTemplate = "display {target}"
+            },
+            new()
+            {
+                BehaviorDefId = "BEH-SET",
+                CanonicalLabel = "set",
+                JapaneseLabel = "設定",
+                Effect = SemanticEffect.MutateState,
+                AllowedTargetTypes = [ConceptType.StateVariable, ConceptType.LifecycleState],
+                RequiresToValue = true,
+                JapaneseTemplate = "{target}を{to}に設定すること",
+                EnglishTemplate = "set {target} to {to}"
+            },
+            new()
+            {
+                BehaviorDefId = "BEH-DELETE",
+                CanonicalLabel = "delete",
+                JapaneseLabel = "削除",
+                Effect = SemanticEffect.ManageEntity,
+                AllowedTargetTypes = [ConceptType.DomainObject],
+                JapaneseTemplate = "{target}を削除すること",
+                EnglishTemplate = "delete {target}"
+            }
+        };
+
         var ubiquitous = new CanonicalRequirementNode
         {
             Id = "R1",
             NodeKind = RequirementNodeKind.Atomic,
             EarsPattern = EarsEntryPattern.Ubiquitous,
             SubjectSystemRef = "SYS",
-            Behavior = new BehaviorNode { Kind = BehaviorKind.DISPLAY, TargetTermRef = "OBJ" }
+            Behavior = new BehaviorNode { BehaviorDefRef = "BEH-DISPLAY", TargetTermRef = "OBJ" }
         };
-        Assert.Equal("注文システムは、注文を表示すること。", JapaneseRequirementRenderer.Render(ubiquitous, glossary));
+        Assert.Equal("注文システムは、注文を表示すること。", JapaneseRequirementRenderer.Render(ubiquitous, glossary, behaviorCatalog: catalog));
 
         var stateDriven = new CanonicalRequirementNode
         {
@@ -176,9 +215,9 @@ public class V2CrudSampleAndRenderingTests
             [
                 new PreconditionClause { StateTermRef = "SV-MAINT", Operator = ComparisonOperator.EQ, ExpectedValues = ["true"] }
             ],
-            Behavior = new BehaviorNode { Kind = BehaviorKind.SET, TargetTermRef = "SV-STATUS", SetValue = "待機", Timing = TimingKind.EVENTUAL }
+            Behavior = new BehaviorNode { BehaviorDefRef = "BEH-SET", TargetTermRef = "SV-STATUS", ToValue = "待機", Timing = TimingKind.EVENTUAL }
         };
-        Assert.Equal("メンテナンスモードがtrueの間、注文システムは、最終的に処理状態を待機に設定すること。", JapaneseRequirementRenderer.Render(stateDriven, glossary));
+        Assert.Equal("メンテナンスモードがtrueの間、注文システムは、最終的に処理状態を待機に設定すること。", JapaneseRequirementRenderer.Render(stateDriven, glossary, behaviorCatalog: catalog));
 
         var optionalFeature = new CanonicalRequirementNode
         {
@@ -190,9 +229,117 @@ public class V2CrudSampleAndRenderingTests
             [
                 new PreconditionClause { StateTermRef = "SV-AUDIT", Operator = ComparisonOperator.EQ, ExpectedValues = ["true"] }
             ],
-            Behavior = new BehaviorNode { Kind = BehaviorKind.DELETE, TargetTermRef = "OBJ" }
+            Behavior = new BehaviorNode { BehaviorDefRef = "BEH-DELETE", TargetTermRef = "OBJ" }
         };
-        Assert.Equal("監査ログ機能がtrueの場合、注文システムは、注文を削除すること。", JapaneseRequirementRenderer.Render(optionalFeature, glossary));
+        Assert.Equal("監査ログ機能がtrueの場合、注文システムは、注文を削除すること。", JapaneseRequirementRenderer.Render(optionalFeature, glossary, behaviorCatalog: catalog));
+    }
+
+    [Fact]
+    public void Renderers_HandleProhibitFallbackAndProhibitedToValue()
+    {
+        var glossary = new List<ApprovedGlossaryTerm>
+        {
+            new() { Id = "SYS", CanonicalName = "DocSystem", DisplayName = "文書システム", ConceptType = ConceptType.System },
+            new() { Id = "OBJ", CanonicalName = "Document", DisplayName = "文書", ConceptType = ConceptType.DomainObject },
+            new()
+            {
+                Id = "LC",
+                CanonicalName = "DocState",
+                DisplayName = "文書状態",
+                ConceptType = ConceptType.LifecycleState,
+                LogicalType = new LogicalTypeDefinition
+                {
+                    Kind = LogicalTypeKind.Enum,
+                    AllowedValues = ["Draft", "Archived"],
+                    ValueLabels = new Dictionary<string, string>
+                    {
+                        ["Draft"] = "下書き",
+                        ["Archived"] = "アーカイブ"
+                    }
+                }
+            }
+        };
+
+        var catalog = new List<BehaviorDefinition>
+        {
+            new()
+            {
+                BehaviorDefId = "BEH-TRANSITION",
+                CanonicalLabel = "transition",
+                JapaneseLabel = "遷移",
+                Effect = SemanticEffect.MutateState,
+                AllowedTargetTypes = [ConceptType.LifecycleState],
+                RequiresFromValue = true,
+                RequiresToValue = true,
+                JapaneseTemplate = "{target}を{from}から{to}へ遷移すること",
+                EnglishTemplate = "transition {target} from {from} to {to}"
+            },
+            new()
+            {
+                BehaviorDefId = "BEH-PROHIBIT",
+                CanonicalLabel = "prohibit",
+                JapaneseLabel = "禁止",
+                Effect = SemanticEffect.Prohibit,
+                AllowedTargetTypes = [ConceptType.DomainObject, ConceptType.LifecycleState],
+                JapaneseTemplate = "{target}の{prohibitedAction}を禁止すること",
+                EnglishTemplate = "prohibit {prohibitedAction} on {target}"
+            },
+            new()
+            {
+                BehaviorDefId = "BEH-PROHIBIT-TO",
+                CanonicalLabel = "prohibit transition",
+                JapaneseLabel = "遷移禁止",
+                Effect = SemanticEffect.Prohibit,
+                AllowedTargetTypes = [ConceptType.LifecycleState],
+                JapaneseTemplate = "{target}の{to}への{prohibitedAction}を禁止すること",
+                EnglishTemplate = "prohibit {prohibitedAction} on {target} to {to}"
+            }
+        };
+
+        // 1. ProhibitedBehaviorDefRef == null -> fallback to "操作" / "any action"
+        var prohibitAll = new CanonicalRequirementNode
+        {
+            Id = "R-ALL",
+            NodeKind = RequirementNodeKind.Atomic,
+            SubjectSystemRef = "SYS",
+            Behavior = new BehaviorNode { BehaviorDefRef = "BEH-PROHIBIT", TargetTermRef = "OBJ", ProhibitedBehaviorDefRef = null }
+        };
+        Assert.Equal("文書システムは、文書の操作を禁止すること。", JapaneseRequirementRenderer.Render(prohibitAll, glossary, behaviorCatalog: catalog));
+        Assert.Equal("The DocSystem shall prohibit any action on Document.", EnglishRequirementRenderer.Render(prohibitAll, glossary, behaviorCatalog: catalog));
+
+        // 2. ProhibitedToValue != null without {to} in template -> auto-append suffix
+        var prohibitArchive = new CanonicalRequirementNode
+        {
+            Id = "R-ARCH",
+            NodeKind = RequirementNodeKind.Atomic,
+            SubjectSystemRef = "SYS",
+            Behavior = new BehaviorNode
+            {
+                BehaviorDefRef = "BEH-PROHIBIT",
+                TargetTermRef = "LC",
+                ProhibitedBehaviorDefRef = "BEH-TRANSITION",
+                ProhibitedToValue = "Archived"
+            }
+        };
+        Assert.Equal("文書システムは、文書状態の遷移を禁止すること（遷移先: アーカイブ）。", JapaneseRequirementRenderer.Render(prohibitArchive, glossary, behaviorCatalog: catalog));
+        Assert.Equal("The DocSystem shall prohibit transition on DocState (to Archived).", EnglishRequirementRenderer.Render(prohibitArchive, glossary, behaviorCatalog: catalog));
+
+        // 3. ProhibitedToValue != null with {to} in template -> inline substitution without extra suffix
+        var prohibitInlineTo = new CanonicalRequirementNode
+        {
+            Id = "R-INLINE",
+            NodeKind = RequirementNodeKind.Atomic,
+            SubjectSystemRef = "SYS",
+            Behavior = new BehaviorNode
+            {
+                BehaviorDefRef = "BEH-PROHIBIT-TO",
+                TargetTermRef = "LC",
+                ProhibitedBehaviorDefRef = "BEH-TRANSITION",
+                ProhibitedToValue = "Archived"
+            }
+        };
+        Assert.Equal("文書システムは、文書状態のアーカイブへの遷移を禁止すること。", JapaneseRequirementRenderer.Render(prohibitInlineTo, glossary, behaviorCatalog: catalog));
+        Assert.Equal("The DocSystem shall prohibit transition on DocState to Archived.", EnglishRequirementRenderer.Render(prohibitInlineTo, glossary, behaviorCatalog: catalog));
     }
 
     [Fact]
@@ -249,6 +396,20 @@ public class V2CrudSampleAndRenderingTests
                     }
                 }
             ],
+            BehaviorCatalog =
+            [
+                new BehaviorDefinition
+                {
+                    BehaviorDefId = "BEH-SET",
+                    CanonicalLabel = "set",
+                    JapaneseLabel = "設定",
+                    Effect = SemanticEffect.MutateState,
+                    AllowedTargetTypes = [ConceptType.StateVariable, ConceptType.LifecycleState],
+                    RequiresToValue = true,
+                    JapaneseTemplate = "{target}を{to}に設定すること",
+                    EnglishTemplate = "set {target} to {to}"
+                }
+            ],
             Requirements =
             [
                 new CanonicalRequirementNode
@@ -265,9 +426,9 @@ public class V2CrudSampleAndRenderingTests
                     ],
                     Behavior = new BehaviorNode
                     {
-                        Kind = BehaviorKind.SET,
+                        BehaviorDefRef = "BEH-SET",
                         TargetTermRef = "SV-LOCK",
-                        SetValue = "true",
+                        ToValue = "true",
                         Timing = TimingKind.IMMEDIATE
                     }
                 }
@@ -284,7 +445,7 @@ public class V2CrudSampleAndRenderingTests
         Assert.Equal("車速 >= 30 km/h を HighSpeed として抽象化", speedTerm.AbstractionNote);
         Assert.Equal(["スピード"], speedTerm.DeprecatedLabels);
 
-        var sentence = JapaneseRequirementRenderer.Render(restored.Requirements[0], restored.Glossary);
+        var sentence = JapaneseRequirementRenderer.Render(restored.Requirements[0], restored.Glossary, restored.EscapeRecords, restored.BehaviorCatalog);
         Assert.Equal("車速が高速の間、ADASコントローラは、即座にドアロック状態を施錠に設定すること。", sentence);
     }
 }

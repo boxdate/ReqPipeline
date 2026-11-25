@@ -66,6 +66,15 @@ public static class JourneySimulator
             }
         }
 
+        var behaviorCatalogById = new Dictionary<string, BehaviorDefinition>(StringComparer.Ordinal);
+        foreach (var def in document.BehaviorCatalog)
+        {
+            if (!string.IsNullOrWhiteSpace(def.BehaviorDefId))
+            {
+                behaviorCatalogById.TryAdd(def.BehaviorDefId, def);
+            }
+        }
+
         var requirementsById = new Dictionary<string, CanonicalRequirementNode>(StringComparer.Ordinal);
         foreach (var req in document.Requirements)
         {
@@ -106,7 +115,7 @@ public static class JourneySimulator
         foreach (var step in journey.Steps)
         {
             var stateBefore = new Dictionary<string, string>(currentState, StringComparer.Ordinal);
-            var stepResult = EvaluateStep(step, requirementsById, glossaryById, currentState, stateBefore);
+            var stepResult = EvaluateStep(step, requirementsById, glossaryById, behaviorCatalogById, currentState, stateBefore);
             stepResults.Add(stepResult);
         }
 
@@ -124,6 +133,7 @@ public static class JourneySimulator
         JourneyStep step,
         Dictionary<string, CanonicalRequirementNode> requirementsById,
         Dictionary<string, ApprovedGlossaryTerm> glossaryById,
+        Dictionary<string, BehaviorDefinition> behaviorCatalogById,
         Dictionary<string, string> currentState,
         Dictionary<string, string> stateBefore)
     {
@@ -165,6 +175,19 @@ public static class JourneySimulator
                 message: $"Atomic requirement '{req.Id}' has no Behavior defined.");
         }
 
+        if (string.IsNullOrWhiteSpace(req.Behavior.BehaviorDefRef)
+            || !behaviorCatalogById.TryGetValue(req.Behavior.BehaviorDefRef, out var behaviorDef))
+        {
+            return CreateResult(
+                step,
+                req.Title,
+                JourneyStepStatus.InvalidRequirement,
+                stateBefore,
+                currentState,
+                transitionSummary: string.Empty,
+                message: $"BehaviorDefinition '{req.Behavior.BehaviorDefRef}' on requirement '{req.Id}' was not found in BehaviorCatalog.");
+        }
+
         // Rule 2: Preconditions check
         foreach (var clause in req.Preconditions)
         {
@@ -201,11 +224,11 @@ public static class JourneySimulator
         var behavior = req.Behavior;
         var targetName = ResolveCanonicalName(behavior.TargetTermRef, glossaryById);
 
-        switch (behavior.Kind)
+        switch (behaviorDef.Effect)
         {
-            case BehaviorKind.TRANSITION:
+            case SemanticEffect.MutateState:
             {
-                if (string.IsNullOrWhiteSpace(behavior.FromValue) || string.IsNullOrWhiteSpace(behavior.ToValue))
+                if (string.IsNullOrWhiteSpace(behavior.ToValue))
                 {
                     return CreateResult(
                         step,
@@ -214,53 +237,41 @@ public static class JourneySimulator
                         stateBefore,
                         currentState,
                         transitionSummary: string.Empty,
-                        message: $"Requirement '{req.Id}' TRANSITION behavior is missing FromValue or ToValue.");
+                        message: $"Requirement '{req.Id}' MutateState behavior '{behaviorDef.BehaviorDefId}' is missing ToValue.");
                 }
 
-                currentState.TryGetValue(behavior.TargetTermRef, out var currentTargetVal);
-                if (!string.Equals(currentTargetVal, behavior.FromValue, StringComparison.Ordinal))
+                if (!string.IsNullOrWhiteSpace(behavior.FromValue))
                 {
-                    var actual = string.IsNullOrWhiteSpace(currentTargetVal) ? "(unset)" : currentTargetVal;
+                    if (!currentState.TryGetValue(behavior.TargetTermRef, out var currentTargetVal)
+                        || !string.Equals(currentTargetVal, behavior.FromValue, StringComparison.Ordinal))
+                    {
+                        var actual = string.IsNullOrWhiteSpace(currentTargetVal) ? "(unset)" : currentTargetVal;
+                        return CreateResult(
+                            step,
+                            req.Title,
+                            JourneyStepStatus.StateMismatch,
+                            stateBefore,
+                            currentState,
+                            transitionSummary: $"{targetName}: expected {behavior.FromValue}, actual {actual}",
+                            message: $"State mismatch on '{targetName}': Expected FromValue '{behavior.FromValue}', but current is '{actual}'.");
+                    }
+
+                    currentState[behavior.TargetTermRef] = behavior.ToValue;
                     return CreateResult(
                         step,
                         req.Title,
-                        JourneyStepStatus.StateMismatch,
+                        JourneyStepStatus.Passed,
                         stateBefore,
                         currentState,
-                        transitionSummary: $"{targetName}: expected {behavior.FromValue}, actual {actual}",
-                        message: $"State mismatch on '{targetName}': Expected FromValue '{behavior.FromValue}', but current is '{actual}'.");
-                }
-
-                currentState[behavior.TargetTermRef] = behavior.ToValue;
-                return CreateResult(
-                    step,
-                    req.Title,
-                    JourneyStepStatus.Passed,
-                    stateBefore,
-                    currentState,
-                    transitionSummary: $"{targetName}: {behavior.FromValue} -> {behavior.ToValue}",
-                    message: $"Transitioned '{targetName}' from '{behavior.FromValue}' to '{behavior.ToValue}'.");
-            }
-
-            case BehaviorKind.SET:
-            {
-                if (string.IsNullOrWhiteSpace(behavior.SetValue))
-                {
-                    return CreateResult(
-                        step,
-                        req.Title,
-                        JourneyStepStatus.InvalidRequirement,
-                        stateBefore,
-                        currentState,
-                        transitionSummary: string.Empty,
-                        message: $"Requirement '{req.Id}' SET behavior is missing SetValue.");
+                        transitionSummary: $"{targetName}: {behavior.FromValue} -> {behavior.ToValue}",
+                        message: $"Transitioned '{targetName}' from '{behavior.FromValue}' to '{behavior.ToValue}'.");
                 }
 
                 currentState.TryGetValue(behavior.TargetTermRef, out var prevVal);
-                currentState[behavior.TargetTermRef] = behavior.SetValue;
+                currentState[behavior.TargetTermRef] = behavior.ToValue;
                 var summary = string.IsNullOrWhiteSpace(prevVal)
-                    ? $"{targetName} = {behavior.SetValue}"
-                    : $"{targetName}: {prevVal} -> {behavior.SetValue}";
+                    ? $"{targetName} = {behavior.ToValue}"
+                    : $"{targetName}: {prevVal} -> {behavior.ToValue}";
 
                 return CreateResult(
                     step,
@@ -269,25 +280,34 @@ public static class JourneySimulator
                     stateBefore,
                     currentState,
                     transitionSummary: summary,
-                    message: $"Set '{targetName}' to '{behavior.SetValue}'.");
+                    message: $"Set '{targetName}' to '{behavior.ToValue}'.");
             }
 
-            case BehaviorKind.PROHIBIT:
+            case SemanticEffect.Prohibit:
             {
-                var action = behavior.ProhibitedAction?.ToString() ?? "OPERATION";
+                var action = !string.IsNullOrWhiteSpace(behavior.ProhibitedBehaviorDefRef)
+                    && behaviorCatalogById.TryGetValue(behavior.ProhibitedBehaviorDefRef, out var prohibitedDef)
+                        ? prohibitedDef.CanonicalLabel
+                        : (!string.IsNullOrWhiteSpace(behavior.ProhibitedBehaviorDefRef)
+                            ? behavior.ProhibitedBehaviorDefRef
+                            : "OPERATION");
+
+                var toSuffix = !string.IsNullOrWhiteSpace(behavior.ProhibitedToValue)
+                    ? $" (to {behavior.ProhibitedToValue})"
+                    : string.Empty;
+
                 return CreateResult(
                     step,
                     req.Title,
                     JourneyStepStatus.Blocked,
                     stateBefore,
                     currentState,
-                    transitionSummary: $"PROHIBIT {action} on {targetName}",
-                    message: $"Prohibited {action} on '{targetName}' triggered.");
+                    transitionSummary: $"PROHIBIT {action} on {targetName}{toSuffix}",
+                    message: $"Prohibited {action} on '{targetName}'{toSuffix} triggered.");
             }
 
-            case BehaviorKind.CREATE:
-            case BehaviorKind.DELETE:
-            case BehaviorKind.DISPLAY:
+            case SemanticEffect.ManageEntity:
+            case SemanticEffect.EmitAction:
             {
                 return CreateResult(
                     step,
@@ -295,8 +315,8 @@ public static class JourneySimulator
                     JourneyStepStatus.Passed,
                     stateBefore,
                     currentState,
-                    transitionSummary: $"{behavior.Kind} {targetName}",
-                    message: $"Executed {behavior.Kind} on '{targetName}'.");
+                    transitionSummary: $"{behaviorDef.CanonicalLabel} {targetName}",
+                    message: $"Executed {behaviorDef.CanonicalLabel} on '{targetName}'.");
             }
 
             default:
@@ -308,7 +328,7 @@ public static class JourneySimulator
                     stateBefore,
                     currentState,
                     transitionSummary: string.Empty,
-                    message: $"Unsupported BehaviorKind '{behavior.Kind}' on requirement '{req.Id}'.");
+                    message: $"Unsupported SemanticEffect '{behaviorDef.Effect}' on requirement '{req.Id}'.");
             }
         }
     }

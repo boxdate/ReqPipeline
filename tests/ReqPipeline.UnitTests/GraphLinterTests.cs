@@ -5,6 +5,74 @@ namespace ReqPipeline.UnitTests;
 
 public class GraphLinterTests
 {
+    private static List<BehaviorDefinition> CreateStandardBehaviorCatalog() =>
+    [
+        new BehaviorDefinition
+        {
+            BehaviorDefId = "BEH-CREATE",
+            CanonicalLabel = "create",
+            JapaneseLabel = "作成",
+            Effect = SemanticEffect.ManageEntity,
+            AllowedTargetTypes = [ConceptType.DomainObject],
+            JapaneseTemplate = "{target}を作成すること",
+            EnglishTemplate = "create {target}"
+        },
+        new BehaviorDefinition
+        {
+            BehaviorDefId = "BEH-DELETE",
+            CanonicalLabel = "delete",
+            JapaneseLabel = "削除",
+            Effect = SemanticEffect.ManageEntity,
+            AllowedTargetTypes = [ConceptType.DomainObject],
+            JapaneseTemplate = "{target}を削除すること",
+            EnglishTemplate = "delete {target}"
+        },
+        new BehaviorDefinition
+        {
+            BehaviorDefId = "BEH-SET",
+            CanonicalLabel = "set",
+            JapaneseLabel = "設定",
+            Effect = SemanticEffect.MutateState,
+            AllowedTargetTypes = [ConceptType.StateVariable, ConceptType.LifecycleState],
+            RequiresFromValue = false,
+            RequiresToValue = true,
+            JapaneseTemplate = "{target}を{to}に設定すること",
+            EnglishTemplate = "set {target} to {to}"
+        },
+        new BehaviorDefinition
+        {
+            BehaviorDefId = "BEH-TRANSITION",
+            CanonicalLabel = "transition",
+            JapaneseLabel = "遷移",
+            Effect = SemanticEffect.MutateState,
+            AllowedTargetTypes = [ConceptType.LifecycleState],
+            RequiresFromValue = true,
+            RequiresToValue = true,
+            JapaneseTemplate = "{target}を{from}から{to}へ遷移すること",
+            EnglishTemplate = "transition {target} from {from} to {to}"
+        },
+        new BehaviorDefinition
+        {
+            BehaviorDefId = "BEH-DISPLAY",
+            CanonicalLabel = "display",
+            JapaneseLabel = "表示",
+            Effect = SemanticEffect.EmitAction,
+            AllowedTargetTypes = [ConceptType.DomainObject],
+            JapaneseTemplate = "{target}を表示すること",
+            EnglishTemplate = "display {target}"
+        },
+        new BehaviorDefinition
+        {
+            BehaviorDefId = "BEH-PROHIBIT",
+            CanonicalLabel = "prohibit",
+            JapaneseLabel = "禁止",
+            Effect = SemanticEffect.Prohibit,
+            AllowedTargetTypes = [ConceptType.DomainObject, ConceptType.LifecycleState, ConceptType.StateVariable],
+            JapaneseTemplate = "{target}の{prohibitedAction}を禁止すること",
+            EnglishTemplate = "prohibit {prohibitedAction} on {target}"
+        }
+    ];
+
     private static KnowledgeGraphDocument CreateValidBaseDocument() => new()
     {
         SchemaVersion = "2.0",
@@ -41,6 +109,7 @@ public class GraphLinterTests
                 }
             }
         ],
+        BehaviorCatalog = CreateStandardBehaviorCatalog(),
         Requirements =
         [
             new CanonicalRequirementNode
@@ -73,7 +142,7 @@ public class GraphLinterTests
                 ],
                 Behavior = new BehaviorNode
                 {
-                    Kind = BehaviorKind.CREATE,
+                    BehaviorDefRef = "BEH-CREATE",
                     TargetTermRef = "OBJ-1"
                 }
             }
@@ -98,12 +167,14 @@ public class GraphLinterTests
         child.ActorRef = "ACT-MISSING";
         child.TriggerEventRef = "EVT-MISSING";
         child.Preconditions[0].StateTermRef = "STATE-MISSING";
-        child.Behavior!.TargetTermRef = "TARGET-MISSING";
+        child.Behavior!.BehaviorDefRef = "BEH-MISSING";
+        child.Behavior.ProhibitedBehaviorDefRef = "BEH-PROHIBIT-MISSING";
+        child.Behavior.TargetTermRef = "TARGET-MISSING";
 
         var diagnostics = GraphLinter.Lint(doc);
         var lint001 = diagnostics.Where(d => d.RuleId == GraphLinter.RuleMissingReference).ToList();
 
-        Assert.Equal(6, lint001.Count);
+        Assert.Equal(8, lint001.Count);
         Assert.All(lint001, d => Assert.Equal(LintSeverity.Error, d.Severity));
     }
 
@@ -116,11 +187,12 @@ public class GraphLinterTests
         child.ActorRef = "SYS-1";                // System instead of Actor
         child.TriggerEventRef = "OBJ-1";         // DomainObject instead of Event
         child.Preconditions[0].StateTermRef = "EVT-1"; // Event instead of StateVariable/LifecycleState
+        child.Behavior!.TargetTermRef = "SV-BOOL";     // StateVariable instead of DomainObject for BEH-CREATE
 
         var diagnostics = GraphLinter.Lint(doc);
         var lint002 = diagnostics.Where(d => d.RuleId == GraphLinter.RuleConceptTypeMismatch).ToList();
 
-        Assert.Equal(4, lint002.Count);
+        Assert.Equal(5, lint002.Count);
         Assert.All(lint002, d => Assert.Equal(LintSeverity.Error, d.Severity));
     }
 
@@ -131,16 +203,16 @@ public class GraphLinterTests
         var child = doc.Requirements[1];
         // Invalid boolean value ("yes" is not "true"/"false")
         child.Preconditions[0].ExpectedValues = ["yes"];
-        // Invalid enum values on TRANSITION
+        // Invalid enum values on BEH-TRANSITION
         child.Behavior = new BehaviorNode
         {
-            Kind = BehaviorKind.TRANSITION,
+            BehaviorDefRef = "BEH-TRANSITION",
             TargetTermRef = "LC-1",
             FromValue = "InvalidFrom",
             ToValue = "InvalidTo"
         };
 
-        // Also add a SET with invalid value
+        // Also add a BEH-SET with invalid value
         doc.Requirements.Add(new CanonicalRequirementNode
         {
             Id = "REQ-1-2",
@@ -150,16 +222,33 @@ public class GraphLinterTests
             SubjectSystemRef = "SYS-1",
             Behavior = new BehaviorNode
             {
-                Kind = BehaviorKind.SET,
+                BehaviorDefRef = "BEH-SET",
                 TargetTermRef = "SV-BOOL",
-                SetValue = "maybe"
+                ToValue = "maybe"
+            }
+        });
+
+        // Also add a BEH-PROHIBIT with invalid ProhibitedToValue
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-1-3",
+            Title = "不正なProhibitedToValue",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-1",
+            SubjectSystemRef = "SYS-1",
+            Behavior = new BehaviorNode
+            {
+                BehaviorDefRef = "BEH-PROHIBIT",
+                TargetTermRef = "LC-1",
+                ProhibitedBehaviorDefRef = "BEH-TRANSITION",
+                ProhibitedToValue = "NonExistentState"
             }
         });
 
         var diagnostics = GraphLinter.Lint(doc);
         var lint003 = diagnostics.Where(d => d.RuleId == GraphLinter.RuleLogicalDomainViolation).ToList();
 
-        Assert.Equal(4, lint003.Count);
+        Assert.Equal(5, lint003.Count);
         Assert.All(lint003, d => Assert.Equal(LintSeverity.Error, d.Severity));
     }
 
@@ -239,13 +328,29 @@ public class GraphLinterTests
             SubjectSystemRef = "SYS-1",
             Behavior = new BehaviorNode
             {
-                Kind = BehaviorKind.TRANSITION,
+                BehaviorDefRef = "BEH-TRANSITION",
                 TargetTermRef = "LC-1",
                 FromValue = "Draft",
                 ToValue = null
             }
         });
-        // SET missing SetValue
+        // TRANSITION missing FromValue
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-BAD-TRANS-FROM",
+            Title = "遷移元欠落",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-1",
+            SubjectSystemRef = "SYS-1",
+            Behavior = new BehaviorNode
+            {
+                BehaviorDefRef = "BEH-TRANSITION",
+                TargetTermRef = "LC-1",
+                FromValue = null,
+                ToValue = "Published"
+            }
+        });
+        // SET missing ToValue
         doc.Requirements.Add(new CanonicalRequirementNode
         {
             Id = "REQ-BAD-SET",
@@ -255,37 +360,24 @@ public class GraphLinterTests
             SubjectSystemRef = "SYS-1",
             Behavior = new BehaviorNode
             {
-                Kind = BehaviorKind.SET,
+                BehaviorDefRef = "BEH-SET",
                 TargetTermRef = "SV-BOOL",
-                SetValue = ""
+                ToValue = ""
             }
         });
-        // CREATE targeting non-DomainObject (StateVariable)
+        // PROHIBIT referencing another PROHIBIT behavior (self-prohibition / prohibiting prohibition)
         doc.Requirements.Add(new CanonicalRequirementNode
         {
-            Id = "REQ-BAD-CREATE",
-            Title = "非DomainObjectのCREATE",
+            Id = "REQ-BAD-PROHIBIT",
+            Title = "禁止の禁止",
             NodeKind = RequirementNodeKind.Atomic,
             ParentRequirementId = "REQ-1",
             SubjectSystemRef = "SYS-1",
             Behavior = new BehaviorNode
             {
-                Kind = BehaviorKind.CREATE,
-                TargetTermRef = "SV-BOOL"
-            }
-        });
-        // DELETE targeting non-DomainObject (Event)
-        doc.Requirements.Add(new CanonicalRequirementNode
-        {
-            Id = "REQ-BAD-DELETE",
-            Title = "非DomainObjectのDELETE",
-            NodeKind = RequirementNodeKind.Atomic,
-            ParentRequirementId = "REQ-1",
-            SubjectSystemRef = "SYS-1",
-            Behavior = new BehaviorNode
-            {
-                Kind = BehaviorKind.DELETE,
-                TargetTermRef = "EVT-1"
+                BehaviorDefRef = "BEH-PROHIBIT",
+                TargetTermRef = "OBJ-1",
+                ProhibitedBehaviorDefRef = "BEH-PROHIBIT"
             }
         });
 
@@ -294,9 +386,9 @@ public class GraphLinterTests
 
         Assert.Equal(4, lint005.Count);
         Assert.Contains(lint005, d => d.TargetId == "REQ-BAD-TRANS");
+        Assert.Contains(lint005, d => d.TargetId == "REQ-BAD-TRANS-FROM");
         Assert.Contains(lint005, d => d.TargetId == "REQ-BAD-SET");
-        Assert.Contains(lint005, d => d.TargetId == "REQ-BAD-CREATE");
-        Assert.Contains(lint005, d => d.TargetId == "REQ-BAD-DELETE");
+        Assert.Contains(lint005, d => d.TargetId == "REQ-BAD-PROHIBIT");
     }
 
     [Fact]
@@ -375,9 +467,9 @@ public class GraphLinterTests
             ],
             Behavior = new BehaviorNode
             {
-                Kind = BehaviorKind.PROHIBIT,
+                BehaviorDefRef = "BEH-PROHIBIT",
                 TargetTermRef = "OBJ-1",
-                ProhibitedAction = BehaviorKind.DELETE
+                ProhibitedBehaviorDefRef = "BEH-DELETE"
             }
         });
 
@@ -393,7 +485,7 @@ public class GraphLinterTests
             TriggerEventRef = "EVT-DEL",
             Behavior = new BehaviorNode
             {
-                Kind = BehaviorKind.DELETE,
+                BehaviorDefRef = "BEH-DELETE",
                 TargetTermRef = "OBJ-1"
             }
         });
@@ -450,9 +542,9 @@ public class GraphLinterTests
             ],
             Behavior = new BehaviorNode
             {
-                Kind = BehaviorKind.PROHIBIT,
+                BehaviorDefRef = "BEH-PROHIBIT",
                 TargetTermRef = "OBJ-1",
-                ProhibitedAction = BehaviorKind.DELETE
+                ProhibitedBehaviorDefRef = "BEH-DELETE"
             }
         });
 
@@ -477,7 +569,7 @@ public class GraphLinterTests
             ],
             Behavior = new BehaviorNode
             {
-                Kind = BehaviorKind.DELETE,
+                BehaviorDefRef = "BEH-DELETE",
                 TargetTermRef = "OBJ-1"
             }
         });
@@ -515,7 +607,7 @@ public class GraphLinterTests
             TriggerEventRef = "EVT-1",
             Behavior = new BehaviorNode
             {
-                Kind = BehaviorKind.TRANSITION,
+                BehaviorDefRef = "BEH-TRANSITION",
                 TargetTermRef = "LC-SCREEN",
                 FromValue = "作成",
                 ToValue = "一覧"
@@ -533,7 +625,7 @@ public class GraphLinterTests
             TriggerEventRef = "EVT-1",
             Behavior = new BehaviorNode
             {
-                Kind = BehaviorKind.TRANSITION,
+                BehaviorDefRef = "BEH-TRANSITION",
                 TargetTermRef = "LC-SCREEN",
                 FromValue = "作成",
                 ToValue = "詳細"
@@ -545,8 +637,127 @@ public class GraphLinterTests
 
         Assert.Equal(2, lint008.Count);
         Assert.All(lint008, d => Assert.Equal(LintSeverity.Error, d.Severity));
-        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-A" && d.Message.Contains("REQ-TRANS-B") && d.Message.Contains("conflicting transition targets"));
-        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-B" && d.Message.Contains("REQ-TRANS-A") && d.Message.Contains("conflicting transition targets"));
+        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-A" && d.Message.Contains("REQ-TRANS-B") && d.Message.Contains("conflicting state mutation targets"));
+        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-B" && d.Message.Contains("REQ-TRANS-A") && d.Message.Contains("conflicting state mutation targets"));
+    }
+
+    [Fact]
+    public void Lint008_ProhibitedToValue_DetectsConflictOnlyWhenToValueMatches()
+    {
+        var doc = CreateValidBaseDocument();
+
+        // LC-1 への Archived 遷移のみを禁止
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-PROHIBIT-ARCHIVE",
+            Title = "アーカイブ遷移禁止",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-1",
+            EarsPattern = EarsEntryPattern.EventDriven,
+            SubjectSystemRef = "SYS-1",
+            TriggerEventRef = "EVT-1",
+            Behavior = new BehaviorNode
+            {
+                BehaviorDefRef = "BEH-PROHIBIT",
+                TargetTermRef = "LC-1",
+                ProhibitedBehaviorDefRef = "BEH-TRANSITION",
+                ProhibitedToValue = "Archived"
+            }
+        });
+
+        // Published への遷移は ProhibitedToValue と一致しないので衝突しない
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-TRANS-PUBLISH",
+            Title = "公開へ遷移",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-1",
+            EarsPattern = EarsEntryPattern.EventDriven,
+            SubjectSystemRef = "SYS-1",
+            TriggerEventRef = "EVT-1",
+            Behavior = new BehaviorNode
+            {
+                BehaviorDefRef = "BEH-TRANSITION",
+                TargetTermRef = "LC-1",
+                FromValue = "Draft",
+                ToValue = "Published"
+            }
+        });
+
+        var noConflictDiagnostics = GraphLinter.Lint(doc);
+        Assert.DoesNotContain(noConflictDiagnostics, d => d.RuleId == GraphLinter.RuleRequirementConflict);
+
+        // Archived への遷移を追加すると衝突検知される
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-TRANS-ARCHIVE",
+            Title = "アーカイブへ遷移",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-1",
+            EarsPattern = EarsEntryPattern.EventDriven,
+            SubjectSystemRef = "SYS-1",
+            TriggerEventRef = "EVT-1",
+            Behavior = new BehaviorNode
+            {
+                BehaviorDefRef = "BEH-TRANSITION",
+                TargetTermRef = "LC-1",
+                FromValue = "Published",
+                ToValue = "Archived"
+            }
+        });
+
+        var conflictDiagnostics = GraphLinter.Lint(doc);
+        var lint008 = conflictDiagnostics.Where(d => d.RuleId == GraphLinter.RuleRequirementConflict).ToList();
+        Assert.Equal(2, lint008.Count);
+        Assert.Contains(lint008, d => d.TargetId == "REQ-PROHIBIT-ARCHIVE" && d.Message.Contains("REQ-TRANS-ARCHIVE"));
+        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-ARCHIVE" && d.Message.Contains("REQ-PROHIBIT-ARCHIVE"));
+    }
+
+    [Fact]
+    public void Lint008_DetectsMutateStateConflict_BetweenSetAndTransition()
+    {
+        var doc = CreateValidBaseDocument();
+
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-SET-PUBLISHED",
+            Title = "公開設定",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-1",
+            EarsPattern = EarsEntryPattern.EventDriven,
+            SubjectSystemRef = "SYS-1",
+            TriggerEventRef = "EVT-1",
+            Behavior = new BehaviorNode
+            {
+                BehaviorDefRef = "BEH-SET",
+                TargetTermRef = "LC-1",
+                ToValue = "Published"
+            }
+        });
+
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-TRANS-ARCHIVE",
+            Title = "アーカイブ遷移",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-1",
+            EarsPattern = EarsEntryPattern.EventDriven,
+            SubjectSystemRef = "SYS-1",
+            TriggerEventRef = "EVT-1",
+            Behavior = new BehaviorNode
+            {
+                BehaviorDefRef = "BEH-TRANSITION",
+                TargetTermRef = "LC-1",
+                FromValue = "Draft",
+                ToValue = "Archived"
+            }
+        });
+
+        var diagnostics = GraphLinter.Lint(doc);
+        var lint008 = diagnostics.Where(d => d.RuleId == GraphLinter.RuleRequirementConflict).ToList();
+        Assert.Equal(2, lint008.Count);
+        Assert.Contains(lint008, d => d.TargetId == "REQ-SET-PUBLISHED" && d.Message.Contains("conflicting state mutation targets"));
+        Assert.Contains(lint008, d => d.TargetId == "REQ-TRANS-ARCHIVE" && d.Message.Contains("conflicting state mutation targets"));
     }
 
     [Fact]
@@ -687,7 +898,7 @@ public class GraphLinterTests
             TriggerEventRef = "EVT-1",
             Behavior = new BehaviorNode
             {
-                Kind = BehaviorKind.TRANSITION,
+                BehaviorDefRef = "BEH-TRANSITION",
                 TargetTermRef = "LC-1",
                 FromValue = "Draft",
                 ToValue = "Published"
@@ -715,7 +926,7 @@ public class GraphLinterTests
             ParentRequirementId = "REQ-1",
             RationaleRefs = ["RAT-1"],
             SubjectSystemRef = "SYS-1",
-            Behavior = new BehaviorNode { Kind = BehaviorKind.TRANSITION, TargetTermRef = "LC-1", FromValue = "Draft", ToValue = "Published" }
+            Behavior = new BehaviorNode { BehaviorDefRef = "BEH-TRANSITION", TargetTermRef = "LC-1", FromValue = "Draft", ToValue = "Published" }
         });
         doc.Requirements.Add(new CanonicalRequirementNode
         {
@@ -725,7 +936,7 @@ public class GraphLinterTests
             ParentRequirementId = "REQ-1",
             RationaleRefs = ["RAT-1"],
             SubjectSystemRef = "SYS-1",
-            Behavior = new BehaviorNode { Kind = BehaviorKind.TRANSITION, TargetTermRef = "LC-1", FromValue = "Published", ToValue = "Archived" }
+            Behavior = new BehaviorNode { BehaviorDefRef = "BEH-TRANSITION", TargetTermRef = "LC-1", FromValue = "Published", ToValue = "Archived" }
         });
         doc.Requirements.Add(new CanonicalRequirementNode
         {
@@ -735,7 +946,7 @@ public class GraphLinterTests
             ParentRequirementId = "REQ-1",
             RationaleRefs = ["RAT-1"],
             SubjectSystemRef = "SYS-1",
-            Behavior = new BehaviorNode { Kind = BehaviorKind.TRANSITION, TargetTermRef = "LC-1", FromValue = "Archived", ToValue = "Draft" }
+            Behavior = new BehaviorNode { BehaviorDefRef = "BEH-TRANSITION", TargetTermRef = "LC-1", FromValue = "Archived", ToValue = "Draft" }
         });
 
         var diagnostics = GraphLinter.Lint(doc);
@@ -765,7 +976,7 @@ public class GraphLinterTests
             ParentRequirementId = "REQ-1",
             RationaleRefs = ["RAT-1"],
             SubjectSystemRef = "SYS-1",
-            Behavior = new BehaviorNode { Kind = BehaviorKind.TRANSITION, TargetTermRef = "LC-1", FromValue = "Draft", ToValue = "Published" }
+            Behavior = new BehaviorNode { BehaviorDefRef = "BEH-TRANSITION", TargetTermRef = "LC-1", FromValue = "Draft", ToValue = "Published" }
         });
 
         var afterDiagnostics = GraphLinter.Lint(doc);

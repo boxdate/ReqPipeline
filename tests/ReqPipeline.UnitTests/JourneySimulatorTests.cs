@@ -68,6 +68,53 @@ public class JourneySimulatorTests
                 }
             }
         ],
+        BehaviorCatalog =
+        [
+            new BehaviorDefinition
+            {
+                BehaviorDefId = "BEH-CREATE",
+                CanonicalLabel = "create",
+                JapaneseLabel = "作成",
+                Effect = SemanticEffect.ManageEntity,
+                AllowedTargetTypes = [ConceptType.DomainObject]
+            },
+            new BehaviorDefinition
+            {
+                BehaviorDefId = "BEH-DELETE",
+                CanonicalLabel = "delete",
+                JapaneseLabel = "削除",
+                Effect = SemanticEffect.ManageEntity,
+                AllowedTargetTypes = [ConceptType.DomainObject]
+            },
+            new BehaviorDefinition
+            {
+                BehaviorDefId = "BEH-SET",
+                CanonicalLabel = "set",
+                JapaneseLabel = "設定",
+                Effect = SemanticEffect.MutateState,
+                AllowedTargetTypes = [ConceptType.StateVariable, ConceptType.LifecycleState],
+                RequiresFromValue = false,
+                RequiresToValue = true
+            },
+            new BehaviorDefinition
+            {
+                BehaviorDefId = "BEH-TRANSITION",
+                CanonicalLabel = "transition",
+                JapaneseLabel = "遷移",
+                Effect = SemanticEffect.MutateState,
+                AllowedTargetTypes = [ConceptType.LifecycleState],
+                RequiresFromValue = true,
+                RequiresToValue = true
+            },
+            new BehaviorDefinition
+            {
+                BehaviorDefId = "BEH-PROHIBIT",
+                CanonicalLabel = "prohibit",
+                JapaneseLabel = "禁止",
+                Effect = SemanticEffect.Prohibit,
+                AllowedTargetTypes = [ConceptType.DomainObject, ConceptType.LifecycleState, ConceptType.StateVariable]
+            }
+        ],
         Requirements =
         [
             new CanonicalRequirementNode
@@ -87,9 +134,9 @@ public class JourneySimulatorTests
                 SubjectSystemRef = "SYS-1",
                 Behavior = new BehaviorNode
                 {
-                    Kind = BehaviorKind.SET,
+                    BehaviorDefRef = "BEH-SET",
                     TargetTermRef = "SV-AUTH",
-                    SetValue = "true"
+                    ToValue = "true"
                 }
             },
             new CanonicalRequirementNode
@@ -105,7 +152,7 @@ public class JourneySimulatorTests
                 ],
                 Behavior = new BehaviorNode
                 {
-                    Kind = BehaviorKind.CREATE,
+                    BehaviorDefRef = "BEH-CREATE",
                     TargetTermRef = "OBJ-1"
                 }
             },
@@ -122,7 +169,7 @@ public class JourneySimulatorTests
                 ],
                 Behavior = new BehaviorNode
                 {
-                    Kind = BehaviorKind.TRANSITION,
+                    BehaviorDefRef = "BEH-TRANSITION",
                     TargetTermRef = "LC-1",
                     FromValue = "Draft",
                     ToValue = "Submitted"
@@ -141,7 +188,7 @@ public class JourneySimulatorTests
                 ],
                 Behavior = new BehaviorNode
                 {
-                    Kind = BehaviorKind.TRANSITION,
+                    BehaviorDefRef = "BEH-TRANSITION",
                     TargetTermRef = "LC-1",
                     FromValue = "Submitted",
                     ToValue = "Approved"
@@ -161,9 +208,9 @@ public class JourneySimulatorTests
                 ],
                 Behavior = new BehaviorNode
                 {
-                    Kind = BehaviorKind.PROHIBIT,
+                    BehaviorDefRef = "BEH-PROHIBIT",
                     TargetTermRef = "OBJ-1",
-                    ProhibitedAction = BehaviorKind.DELETE
+                    ProhibitedBehaviorDefRef = "BEH-DELETE"
                 }
             },
             new CanonicalRequirementNode
@@ -367,5 +414,86 @@ public class JourneySimulatorTests
         Assert.False(res2Admin.IsAllPassed);
         Assert.Equal(1, res2Admin.FailedStepCount);
         Assert.Equal(JourneyStepStatus.PreconditionFailed, res2Admin.Steps[0].Status);
+    }
+
+    [Fact]
+    public void Simulate_MutateStateWithoutFromValue_UpdatesRegardlessOfCurrentValue()
+    {
+        var doc = CreateTestDocument();
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-FORCE-APPROVE",
+            Title = "強制承認設定",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-COMP",
+            SubjectSystemRef = "SYS-1",
+            Behavior = new BehaviorNode
+            {
+                BehaviorDefRef = "BEH-SET",
+                TargetTermRef = "LC-1",
+                FromValue = null,
+                ToValue = "Approved"
+            }
+        });
+
+        var journey = new UserJourney
+        {
+            Id = "JRN-SET-ANY",
+            Title = "FromValueなしMutateStateテスト",
+            Steps =
+            [
+                // SV-AUTH is initially unset; REQ-LOGIN sets it to true
+                new JourneyStep { StepId = "S1", UserAction = "未設定状態からのSET", RequirementRef = "REQ-LOGIN" },
+                // LC-1 is Draft; REQ-FORCE-APPROVE sets it to Approved without checking FromValue
+                new JourneyStep { StepId = "S2", UserAction = "現在値に関わらずApprovedへ設定", RequirementRef = "REQ-FORCE-APPROVE" }
+            ]
+        };
+
+        var result = JourneySimulator.Simulate(doc, journey);
+
+        Assert.True(result.IsAllPassed);
+        Assert.Equal(2, result.PassedStepCount);
+        Assert.Equal("true", result.FinalStates["SV-AUTH"]);
+        Assert.Equal("Approved", result.FinalStates["LC-1"]);
+    }
+
+    [Fact]
+    public void Simulate_MutateStateWithFromValueWhenTargetUnset_DetectsStateMismatch()
+    {
+        var doc = CreateTestDocument();
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-AUTH-TRANS",
+            Title = "認証状態遷移",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-COMP",
+            SubjectSystemRef = "SYS-1",
+            Behavior = new BehaviorNode
+            {
+                BehaviorDefRef = "BEH-TRANSITION",
+                TargetTermRef = "SV-AUTH",
+                FromValue = "false",
+                ToValue = "true"
+            }
+        });
+
+        var journey = new UserJourney
+        {
+            Id = "JRN-UNSET-MISMATCH",
+            Title = "未設定ターゲットへのFromValue付き遷移",
+            Steps =
+            [
+                // SV-AUTH is StateVariable and not in InitialStates -> unset!
+                new JourneyStep { StepId = "S1", UserAction = "未設定のまま遷移を試みる", RequirementRef = "REQ-AUTH-TRANS" }
+            ]
+        };
+
+        var result = JourneySimulator.Simulate(doc, journey);
+
+        Assert.False(result.IsAllPassed);
+        Assert.Equal(1, result.FailedStepCount);
+        var step = Assert.Single(result.Steps);
+        Assert.Equal(JourneyStepStatus.StateMismatch, step.Status);
+        Assert.Contains("(unset)", step.Message);
     }
 }

@@ -28,17 +28,6 @@ public enum ComparisonOperator
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum BehaviorKind
-{
-    CREATE,
-    SET,
-    DELETE,
-    TRANSITION,
-    DISPLAY,
-    PROHIBIT
-}
-
-[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TimingKind
 {
     UNSPECIFIED,
@@ -55,12 +44,12 @@ public sealed class PreconditionClause
 
 public sealed class BehaviorNode
 {
-    public BehaviorKind Kind { get; set; }
+    public string BehaviorDefRef { get; set; } = string.Empty;
     public string TargetTermRef { get; set; } = string.Empty;
     public string? FromValue { get; set; }
     public string? ToValue { get; set; }
-    public string? SetValue { get; set; }
-    public BehaviorKind? ProhibitedAction { get; set; }
+    public string? ProhibitedBehaviorDefRef { get; set; }
+    public string? ProhibitedToValue { get; set; }
     public TimingKind Timing { get; set; } = TimingKind.UNSPECIFIED;
     public string? Notes { get; set; }
 }

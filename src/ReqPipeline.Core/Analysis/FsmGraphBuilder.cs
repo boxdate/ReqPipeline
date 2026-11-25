@@ -50,6 +50,15 @@ public static class FsmGraphBuilder
             }
         }
 
+        var behaviorCatalogById = new Dictionary<string, BehaviorDefinition>(StringComparer.Ordinal);
+        foreach (var def in document.BehaviorCatalog)
+        {
+            if (!string.IsNullOrWhiteSpace(def.BehaviorDefId))
+            {
+                behaviorCatalogById.TryAdd(def.BehaviorDefId, def);
+            }
+        }
+
         var models = new List<FsmModel>();
 
         foreach (var stateTerm in document.Glossary)
@@ -84,7 +93,9 @@ public static class FsmGraphBuilder
             {
                 if (req.NodeKind != RequirementNodeKind.Atomic
                     || req.Behavior is null
-                    || req.Behavior.Kind != BehaviorKind.TRANSITION
+                    || string.IsNullOrWhiteSpace(req.Behavior.BehaviorDefRef)
+                    || !behaviorCatalogById.TryGetValue(req.Behavior.BehaviorDefRef, out var behaviorDef)
+                    || behaviorDef.Effect != SemanticEffect.MutateState
                     || !string.Equals(req.Behavior.TargetTermRef, stateTerm.Id, StringComparison.Ordinal))
                 {
                     continue;
