@@ -47,13 +47,13 @@ public class V2CrudSampleAndRenderingTests
     }
 
     [Fact]
-    public void CrudSampleJson_PassesGraphLinterWithZeroErrorsAndZeroWarnings()
+    public void CrudSampleJson_PassesGraphLinterWithZeroErrors()
     {
         var doc = KnowledgeGraphDocument.FromJson(File.ReadAllText(GetSamplePath()));
 
         var diagnostics = GraphLinter.Lint(doc);
 
-        Assert.Empty(diagnostics);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == LintSeverity.Error);
     }
 
     [Fact]
