@@ -210,6 +210,80 @@
       }
     }
   ],
+  "behaviorCatalog": [
+    {
+      "behaviorDefId": "BEH-CREATE",
+      "canonicalLabel": "create",
+      "japaneseLabel": "作成",
+      "description": "指定したドメインオブジェクトを新規作成する。",
+      "effect": "ManageEntity",
+      "allowedTargetTypes": ["DomainObject"],
+      "requiresFromValue": false,
+      "requiresToValue": false,
+      "japaneseTemplate": "{target}を作成すること",
+      "englishTemplate": "create {target}"
+    },
+    {
+      "behaviorDefId": "BEH-DELETE",
+      "canonicalLabel": "delete",
+      "japaneseLabel": "削除",
+      "description": "指定したドメインオブジェクトを削除する。",
+      "effect": "ManageEntity",
+      "allowedTargetTypes": ["DomainObject"],
+      "requiresFromValue": false,
+      "requiresToValue": false,
+      "japaneseTemplate": "{target}を削除すること",
+      "englishTemplate": "delete {target}"
+    },
+    {
+      "behaviorDefId": "BEH-SET",
+      "canonicalLabel": "set",
+      "japaneseLabel": "設定",
+      "description": "状態変数またはライフサイクル状態の値を設定する。",
+      "effect": "MutateState",
+      "allowedTargetTypes": ["StateVariable", "LifecycleState"],
+      "requiresFromValue": false,
+      "requiresToValue": true,
+      "japaneseTemplate": "{target}を{to}に設定すること",
+      "englishTemplate": "set {target} to {to}"
+    },
+    {
+      "behaviorDefId": "BEH-TRANSITION",
+      "canonicalLabel": "transition",
+      "japaneseLabel": "遷移",
+      "description": "ライフサイクル状態を遷移元から遷移先へ遷移する。",
+      "effect": "MutateState",
+      "allowedTargetTypes": ["LifecycleState"],
+      "requiresFromValue": true,
+      "requiresToValue": true,
+      "japaneseTemplate": "{target}を{from}から{to}へ遷移すること",
+      "englishTemplate": "transition {target} from {from} to {to}"
+    },
+    {
+      "behaviorDefId": "BEH-DISPLAY",
+      "canonicalLabel": "display",
+      "japaneseLabel": "表示",
+      "description": "指定したドメインオブジェクトを表示・出力する。",
+      "effect": "EmitAction",
+      "allowedTargetTypes": ["DomainObject"],
+      "requiresFromValue": false,
+      "requiresToValue": false,
+      "japaneseTemplate": "{target}を表示すること",
+      "englishTemplate": "display {target}"
+    },
+    {
+      "behaviorDefId": "BEH-PROHIBIT",
+      "canonicalLabel": "prohibit",
+      "japaneseLabel": "禁止",
+      "description": "対象に対する特定の振る舞いまたは操作全般を禁止する。",
+      "effect": "Prohibit",
+      "allowedTargetTypes": ["DomainObject", "LifecycleState", "StateVariable"],
+      "requiresFromValue": false,
+      "requiresToValue": false,
+      "japaneseTemplate": "{target}の{prohibitedAction}を禁止すること",
+      "englishTemplate": "prohibit {prohibitedAction} on {target}"
+    }
+  ],
   "requirements": [
     {
       "id": "REQ-001",
@@ -235,7 +309,7 @@
       "triggerEventRef": "TERM-EVT-001",
       "preconditions": [],
       "behavior": {
-        "kind": "CREATE",
+        "behaviorDefRef": "BEH-CREATE",
         "targetTermRef": "TERM-OBJ-001",
         "timing": "IMMEDIATE"
       }
@@ -252,7 +326,7 @@
       "triggerEventRef": "TERM-EVT-002",
       "preconditions": [],
       "behavior": {
-        "kind": "DISPLAY",
+        "behaviorDefRef": "BEH-DISPLAY",
         "targetTermRef": "TERM-OBJ-002",
         "timing": "UNSPECIFIED"
       }
@@ -275,7 +349,7 @@
         }
       ],
       "behavior": {
-        "kind": "TRANSITION",
+        "behaviorDefRef": "BEH-TRANSITION",
         "targetTermRef": "TERM-LC-001",
         "fromValue": "List",
         "toValue": "Detail",
@@ -294,7 +368,7 @@
       "triggerEventRef": "TERM-EVT-005",
       "preconditions": [],
       "behavior": {
-        "kind": "TRANSITION",
+        "behaviorDefRef": "BEH-TRANSITION",
         "targetTermRef": "TERM-LC-001",
         "fromValue": "List",
         "toValue": "Create",
@@ -313,7 +387,7 @@
       "triggerEventRef": "TERM-EVT-006",
       "preconditions": [],
       "behavior": {
-        "kind": "TRANSITION",
+        "behaviorDefRef": "BEH-TRANSITION",
         "targetTermRef": "TERM-LC-001",
         "fromValue": "Create",
         "toValue": "List",
@@ -332,7 +406,7 @@
       "triggerEventRef": "TERM-EVT-007",
       "preconditions": [],
       "behavior": {
-        "kind": "TRANSITION",
+        "behaviorDefRef": "BEH-TRANSITION",
         "targetTermRef": "TERM-LC-001",
         "fromValue": "Detail",
         "toValue": "Edit",
@@ -351,7 +425,7 @@
       "triggerEventRef": "TERM-EVT-008",
       "preconditions": [],
       "behavior": {
-        "kind": "TRANSITION",
+        "behaviorDefRef": "BEH-TRANSITION",
         "targetTermRef": "TERM-LC-001",
         "fromValue": "Edit",
         "toValue": "Detail",
@@ -370,7 +444,7 @@
       "triggerEventRef": "TERM-EVT-009",
       "preconditions": [],
       "behavior": {
-        "kind": "TRANSITION",
+        "behaviorDefRef": "BEH-TRANSITION",
         "targetTermRef": "TERM-LC-001",
         "fromValue": "Detail",
         "toValue": "List",
@@ -414,9 +488,9 @@
         }
       ],
       "behavior": {
-        "kind": "PROHIBIT",
+        "behaviorDefRef": "BEH-PROHIBIT",
         "targetTermRef": "TERM-OBJ-001",
-        "prohibitedAction": "DELETE",
+        "prohibitedBehaviorDefRef": "BEH-DELETE",
         "timing": "UNSPECIFIED"
       }
     }

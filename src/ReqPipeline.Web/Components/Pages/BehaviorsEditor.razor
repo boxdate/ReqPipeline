@@ -1,0 +1,486 @@
+@page "/behaviors"
+@implements IDisposable
+@inject WorkspaceStateService Workspace
+
+<PageTitle>Behaviors - ReqPipeline V2</PageTitle>
+
+<div class="container-fluid py-3 px-4" style="max-width: 1400px;">
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        <div>
+            <h4 class="fw-bold mb-0">Behavior Catalog 管理 (振る舞い動詞定義)</h4>
+            <div class="text-muted small">
+                Core 4プリミティブ (<code>SemanticEffect</code>) に紐づくドメイン固有の動詞・許可対象型・テンプレートを管理します。
+            </div>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" @onclick="CreateNewBehavior">
+            ＋ 新規Behaviorを追加
+        </button>
+    </div>
+
+    <div class="row g-3">
+        <!-- Behavior List -->
+        <div class="col-lg-7">
+            <div class="slot-card">
+                <div class="row g-2 mb-3">
+                    <div class="col-md-5">
+                        <input type="text" class="form-control form-control-sm" placeholder="ID・ラベル・説明で検索..."
+                               @bind="_searchText" @bind:event="oninput" />
+                    </div>
+                    <div class="col-md-7">
+                        <div class="chip-group">
+                            <button type="button" class="slot-chip @(_filterEffect is null ? "active" : "")"
+                                    @onclick="() => _filterEffect = null">
+                                すべて (@Workspace.Document.BehaviorCatalog.Count)
+                            </button>
+                            @foreach (var effect in Enum.GetValues<SemanticEffect>())
+                            {
+                                var count = Workspace.Document.BehaviorCatalog.Count(b => b.Effect == effect);
+                                <button type="button" class="slot-chip @(_filterEffect == effect ? "active" : "")"
+                                        @onclick="() => _filterEffect = effect">
+                                    @effect (@count)
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID</th>
+                                <th>日本語名 / 英語名</th>
+                                <th>Effect</th>
+                                <th>許可対象型</th>
+                                <th>スロット</th>
+                                <th class="text-end">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var def in FilteredBehaviors())
+                            {
+                                var isSelected = _selectedDefId == def.BehaviorDefId;
+                                <tr class="@(isSelected ? "table-primary" : "")" style="cursor:pointer"
+                                    @onclick="() => SelectBehavior(def.BehaviorDefId)">
+                                    <td class="font-monospace small">@def.BehaviorDefId</td>
+                                    <td>
+                                        <div class="fw-semibold">@def.JapaneseLabel</div>
+                                        <div class="font-monospace small text-muted">@def.CanonicalLabel</div>
+                                    </td>
+                                    <td><span class="chip-badge chip-type">@def.Effect</span></td>
+                                    <td class="small">
+                                        @if (def.AllowedTargetTypes.Count == 0)
+                                        {
+                                            <span class="text-danger">未指定</span>
+                                        }
+                                        else
+                                        {
+                                            <span>@string.Join(", ", def.AllowedTargetTypes)</span>
+                                        }
+                                    </td>
+                                    <td class="small text-muted font-monospace">
+                                        @(def.RequiresFromValue ? "From " : "")@(def.RequiresToValue ? "To" : "")@(!def.RequiresFromValue && !def.RequiresToValue ? "-" : "")
+                                    </td>
+                                    <td class="text-end">
+                                        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => DeleteBehavior(def.BehaviorDefId)">
+                                            削除
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Behavior Editor & Live Preview -->
+        <div class="col-lg-5">
+            @{
+                var editing = GetSelectedBehavior();
+            }
+            @if (editing is null)
+            {
+                <div class="slot-card text-center text-muted py-5">
+                    左の一覧から Behavior を選択するか、「＋ 新規Behaviorを追加」をクリックしてください。
+                </div>
+            }
+            else
+            {
+                <div class="slot-card">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <span class="fw-bold">Behavior 定義の編集</span>
+                        <span class="badge bg-secondary font-monospace">@editing.BehaviorDefId</span>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="slot-label">BehaviorDefId</label>
+                        <input type="text" class="form-control form-control-sm font-monospace"
+                               value="@editing.BehaviorDefId"
+                               @onchange="e => RenameBehaviorId(editing, e.Value?.ToString())" />
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-6">
+                            <label class="slot-label">日本語名 (JapaneseLabel)</label>
+                            <input type="text" class="form-control form-control-sm"
+                                   placeholder="例: 施錠"
+                                   value="@editing.JapaneseLabel"
+                                   @oninput="e => { editing.JapaneseLabel = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="slot-label">英語正本名 (CanonicalLabel)</label>
+                            <input type="text" class="form-control form-control-sm font-monospace"
+                                   placeholder="例: lock"
+                                   value="@editing.CanonicalLabel"
+                                   @oninput="e => { editing.CanonicalLabel = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="slot-label">説明 (Description)</label>
+                        <textarea class="form-control form-control-sm" rows="2"
+                                  value="@editing.Description"
+                                  @oninput="e => { editing.Description = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }"></textarea>
+                    </div>
+
+                    <hr />
+
+                    <div class="mb-3">
+                        <div class="d-flex align-items-center justify-content-between mb-1">
+                            <label class="slot-label mb-0">SemanticEffect (4意味プリミティブ)</label>
+                            <span class="small text-muted">選択時に推奨設定を自動補完</span>
+                        </div>
+                        <div class="chip-group">
+                            @foreach (var effect in Enum.GetValues<SemanticEffect>())
+                            {
+                                <button type="button"
+                                        class="slot-chip @(editing.Effect == effect ? "active" : "")"
+                                        @onclick="() => OnEffectChanged(editing, effect)">
+                                    @effect
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="slot-label">許可対象型 (AllowedTargetTypes)</label>
+                        <div class="chip-group">
+                            @foreach (var ct in Enum.GetValues<ConceptType>())
+                            {
+                                var isAllowed = editing.AllowedTargetTypes.Contains(ct);
+                                <button type="button"
+                                        class="slot-chip @(isAllowed ? "active" : "")"
+                                        @onclick="() => ToggleAllowedTargetType(editing, ct)">
+                                    @ct
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="chkReqFrom"
+                                       checked="@editing.RequiresFromValue"
+                                       @onchange="e => { editing.RequiresFromValue = e.Value is bool b && b; Workspace.NotifyChanged(); }" />
+                                <label class="form-check-label small" for="chkReqFrom">RequiresFromValue (遷移元必須)</label>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="chkReqTo"
+                                       checked="@editing.RequiresToValue"
+                                       @onchange="e => { editing.RequiresToValue = e.Value is bool b && b; Workspace.NotifyChanged(); }" />
+                                <label class="form-check-label small" for="chkReqTo">RequiresToValue (設定/遷移先必須)</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr />
+
+                    <div class="mb-2">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <label class="slot-label mb-0">日本語テンプレート (JapaneseTemplate)</label>
+                            <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none"
+                                    @onclick="() => ApplyRecommendedDefaults(editing, editing.Effect)">
+                                推奨雛形を適用
+                            </button>
+                        </div>
+                        <input type="text" class="form-control form-control-sm mt-1"
+                               placeholder="例: {target}を{from}から{to}へ遷移すること"
+                               value="@editing.JapaneseTemplate"
+                               @oninput="e => { editing.JapaneseTemplate = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="slot-label">英語テンプレート (EnglishTemplate)</label>
+                        <input type="text" class="form-control form-control-sm font-monospace"
+                               placeholder="例: transition {target} from {from} to {to}"
+                               value="@editing.EnglishTemplate"
+                               @oninput="e => { editing.EnglishTemplate = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                        <div class="form-text small">
+                            プレースホルダ: <code>{target}</code>, <code>{from}</code>, <code>{to}</code>, <code>{prohibitedAction}</code>
+                        </div>
+                    </div>
+
+                    <hr />
+
+                    <div class="preview-card mb-0">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <div class="preview-lang mb-0">ダミー語彙でのリアルタイムプレビュー</div>
+                            <span class="badge bg-light text-dark border">@editing.Effect</span>
+                        </div>
+                        <div class="mb-2">
+                            <div class="small text-muted">日本語 (EARS):</div>
+                            <div class="preview-text">@RenderDummyPreview(editing, isJapanese: true)</div>
+                        </div>
+                        <div>
+                            <div class="small text-muted">English (Canonical EARS):</div>
+                            <div class="preview-text font-monospace">@RenderDummyPreview(editing, isJapanese: false)</div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _searchText = string.Empty;
+    private SemanticEffect? _filterEffect;
+    private string? _selectedDefId;
+
+    protected override void OnInitialized()
+    {
+        Workspace.OnChange += HandleChanged;
+        _selectedDefId = Workspace.Document.BehaviorCatalog.FirstOrDefault()?.BehaviorDefId;
+    }
+
+    private void HandleChanged()
+    {
+        if (_selectedDefId is null || GetSelectedBehavior() is null)
+        {
+            _selectedDefId = Workspace.Document.BehaviorCatalog.FirstOrDefault()?.BehaviorDefId;
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private IEnumerable<BehaviorDefinition> FilteredBehaviors()
+    {
+        IEnumerable<BehaviorDefinition> query = Workspace.Document.BehaviorCatalog;
+        if (_filterEffect.HasValue)
+        {
+            query = query.Where(b => b.Effect == _filterEffect.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_searchText))
+        {
+            query = query.Where(b =>
+                b.BehaviorDefId.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
+                || b.JapaneseLabel.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
+                || b.CanonicalLabel.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
+                || b.Description.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return query;
+    }
+
+    private BehaviorDefinition? GetSelectedBehavior() =>
+        _selectedDefId is null
+            ? null
+            : Workspace.Document.BehaviorCatalog.FirstOrDefault(
+                b => string.Equals(b.BehaviorDefId, _selectedDefId, StringComparison.Ordinal));
+
+    private void SelectBehavior(string defId)
+    {
+        _selectedDefId = defId;
+    }
+
+    private void CreateNewBehavior()
+    {
+        var idx = Workspace.Document.BehaviorCatalog.Count + 1;
+        var id = $"BEH-CUSTOM-{idx:000}";
+        while (Workspace.Document.BehaviorCatalog.Any(b => b.BehaviorDefId == id))
+        {
+            idx++;
+            id = $"BEH-CUSTOM-{idx:000}";
+        }
+
+        var effect = _filterEffect ?? SemanticEffect.EmitAction;
+        var def = new BehaviorDefinition
+        {
+            BehaviorDefId = id,
+            CanonicalLabel = $"customAction{idx}",
+            JapaneseLabel = $"カスタム動作{idx}",
+            Description = string.Empty,
+            Effect = effect
+        };
+        ApplyRecommendedDefaults(def, effect);
+
+        Workspace.AddBehaviorDefinition(def);
+        _selectedDefId = def.BehaviorDefId;
+    }
+
+    private void DeleteBehavior(string defId)
+    {
+        Workspace.DeleteBehaviorDefinition(defId);
+        if (_selectedDefId == defId)
+        {
+            _selectedDefId = Workspace.Document.BehaviorCatalog.FirstOrDefault()?.BehaviorDefId;
+        }
+    }
+
+    private void RenameBehaviorId(BehaviorDefinition def, string? newId)
+    {
+        if (string.IsNullOrWhiteSpace(newId))
+        {
+            return;
+        }
+
+        def.BehaviorDefId = newId.Trim();
+        _selectedDefId = def.BehaviorDefId;
+        Workspace.NotifyChanged();
+    }
+
+    private void OnEffectChanged(BehaviorDefinition def, SemanticEffect effect)
+    {
+        def.Effect = effect;
+        ApplyRecommendedDefaults(def, effect);
+        Workspace.NotifyChanged();
+    }
+
+    private static void ApplyRecommendedDefaults(BehaviorDefinition def, SemanticEffect effect)
+    {
+        switch (effect)
+        {
+            case SemanticEffect.MutateState:
+                def.AllowedTargetTypes = [ConceptType.LifecycleState, ConceptType.StateVariable];
+                def.RequiresFromValue = true;
+                def.RequiresToValue = true;
+                def.JapaneseTemplate = "{target}を{from}から{to}へ遷移すること";
+                def.EnglishTemplate = "transition {target} from {from} to {to}";
+                break;
+
+            case SemanticEffect.ManageEntity:
+                def.AllowedTargetTypes = [ConceptType.DomainObject];
+                def.RequiresFromValue = false;
+                def.RequiresToValue = false;
+                def.JapaneseTemplate = "{target}を作成すること";
+                def.EnglishTemplate = "create {target}";
+                break;
+
+            case SemanticEffect.EmitAction:
+                def.AllowedTargetTypes = [ConceptType.DomainObject];
+                def.RequiresFromValue = false;
+                def.RequiresToValue = false;
+                def.JapaneseTemplate = "{target}を表示すること";
+                def.EnglishTemplate = "display {target}";
+                break;
+
+            case SemanticEffect.Prohibit:
+                def.AllowedTargetTypes = [ConceptType.DomainObject, ConceptType.LifecycleState, ConceptType.StateVariable];
+                def.RequiresFromValue = false;
+                def.RequiresToValue = false;
+                def.JapaneseTemplate = "{target}の{prohibitedAction}を禁止すること";
+                def.EnglishTemplate = "prohibit {prohibitedAction} on {target}";
+                break;
+        }
+    }
+
+    private void ToggleAllowedTargetType(BehaviorDefinition def, ConceptType ct)
+    {
+        if (def.AllowedTargetTypes.Contains(ct))
+        {
+            def.AllowedTargetTypes.Remove(ct);
+        }
+        else
+        {
+            def.AllowedTargetTypes.Add(ct);
+        }
+        Workspace.NotifyChanged();
+    }
+
+    private static string RenderDummyPreview(BehaviorDefinition def, bool isJapanese)
+    {
+        var isStateTarget = def.RequiresFromValue
+            || def.RequiresToValue
+            || def.AllowedTargetTypes.Contains(ConceptType.LifecycleState)
+            || def.AllowedTargetTypes.Contains(ConceptType.StateVariable);
+
+        var dummyGlossary = new List<ApprovedGlossaryTerm>
+        {
+            new()
+            {
+                Id = "DUMMY-SYS",
+                CanonicalName = "TargetSystem",
+                DisplayName = "対象システム",
+                ConceptType = ConceptType.System
+            },
+            isStateTarget
+                ? new()
+                {
+                    Id = "DUMMY-TARGET",
+                    CanonicalName = "DoorLockState",
+                    DisplayName = "ドアロック状態",
+                    ConceptType = ConceptType.LifecycleState,
+                    LogicalType = new LogicalTypeDefinition
+                    {
+                        Kind = LogicalTypeKind.Enum,
+                        AllowedValues = ["Unlocked", "Locked"],
+                        ValueLabels = new Dictionary<string, string>
+                        {
+                            ["Unlocked"] = "解錠",
+                            ["Locked"] = "施錠"
+                        }
+                    }
+                }
+                : new()
+                {
+                    Id = "DUMMY-TARGET",
+                    CanonicalName = "CustomerRecord",
+                    DisplayName = "顧客データ",
+                    ConceptType = ConceptType.DomainObject
+                }
+        };
+
+        var dummyCatalog = new List<BehaviorDefinition>
+        {
+            def,
+            new()
+            {
+                BehaviorDefId = "DUMMY-ACTION",
+                CanonicalLabel = "delete",
+                JapaneseLabel = "削除",
+                Effect = SemanticEffect.ManageEntity
+            }
+        };
+
+        var dummyNode = new CanonicalRequirementNode
+        {
+            Id = "PREVIEW",
+            NodeKind = RequirementNodeKind.Atomic,
+            EarsPattern = EarsEntryPattern.Ubiquitous,
+            SubjectSystemRef = "DUMMY-SYS",
+            Behavior = new BehaviorNode
+            {
+                BehaviorDefRef = def.BehaviorDefId,
+                TargetTermRef = "DUMMY-TARGET",
+                FromValue = def.RequiresFromValue ? "Unlocked" : null,
+                ToValue = def.RequiresToValue ? "Locked" : null,
+                ProhibitedBehaviorDefRef = def.Effect == SemanticEffect.Prohibit ? "DUMMY-ACTION" : null
+            }
+        };
+
+        return isJapanese
+            ? JapaneseRequirementRenderer.Render(dummyNode, dummyGlossary, behaviorCatalog: dummyCatalog)
+            : EnglishRequirementRenderer.Render(dummyNode, dummyGlossary, behaviorCatalog: dummyCatalog);
+    }
+
+    public void Dispose()
+    {
+        Workspace.OnChange -= HandleChanged;
+    }
+}

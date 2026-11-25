@@ -60,6 +60,15 @@ public sealed class GraphLinter
             }
         }
 
+        var behaviorCatalogById = new Dictionary<string, BehaviorDefinition>(StringComparer.Ordinal);
+        foreach (var def in document.BehaviorCatalog)
+        {
+            if (!string.IsNullOrWhiteSpace(def.BehaviorDefId))
+            {
+                behaviorCatalogById.TryAdd(def.BehaviorDefId, def);
+            }
+        }
+
         var requirementsById = new Dictionary<string, CanonicalRequirementNode>(StringComparer.Ordinal);
         foreach (var req in document.Requirements)
         {
@@ -108,14 +117,14 @@ public sealed class GraphLinter
 
         foreach (var req in document.Requirements)
         {
-            ValidateReferencesAndTypes(req, rationalesById, glossaryById, requirementsById, diagnostics);
+            ValidateReferencesAndTypes(req, rationalesById, glossaryById, behaviorCatalogById, requirementsById, diagnostics);
             ValidateLogicalDomainClosure(req, glossaryById, diagnostics);
             ValidateNodeStructure(req, childCountByParent, pendingEscapeRequirementIds, diagnostics);
-            ValidateBehaviorIntegrity(req, glossaryById, diagnostics);
+            ValidateBehaviorIntegrity(req, behaviorCatalogById, diagnostics);
             ValidateTopLevelRationale(req, rationalesById, diagnostics);
         }
 
-        ValidateRequirementConflicts(document.Requirements, glossaryById, diagnostics);
+        ValidateRequirementConflicts(document.Requirements, glossaryById, behaviorCatalogById, diagnostics);
         ValidateGlossaryDefinitions(document.Glossary, diagnostics);
         ValidateDeprecatedLabelUsage(document, diagnostics);
         ValidateFsmCompleteness(document, diagnostics);
@@ -128,6 +137,7 @@ public sealed class GraphLinter
         CanonicalRequirementNode req,
         Dictionary<string, RationaleNode> rationalesById,
         Dictionary<string, ApprovedGlossaryTerm> glossaryById,
+        Dictionary<string, BehaviorDefinition> behaviorCatalogById,
         Dictionary<string, CanonicalRequirementNode> requirementsById,
         List<LintDiagnostic> diagnostics)
     {
@@ -234,13 +244,43 @@ public sealed class GraphLinter
 
         if (req.Behavior is not null)
         {
-            if (string.IsNullOrWhiteSpace(req.Behavior.TargetTermRef) || !glossaryById.ContainsKey(req.Behavior.TargetTermRef))
+            BehaviorDefinition? behaviorDef = null;
+            if (string.IsNullOrWhiteSpace(req.Behavior.BehaviorDefRef)
+                || !behaviorCatalogById.TryGetValue(req.Behavior.BehaviorDefRef, out behaviorDef))
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Error,
+                    RuleMissingReference,
+                    req.Id,
+                    $"Behavior BehaviorDefRef '{req.Behavior.BehaviorDefRef}' does not exist in BehaviorCatalog."));
+            }
+
+            if (!string.IsNullOrWhiteSpace(req.Behavior.ProhibitedBehaviorDefRef)
+                && !behaviorCatalogById.ContainsKey(req.Behavior.ProhibitedBehaviorDefRef))
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Error,
+                    RuleMissingReference,
+                    req.Id,
+                    $"Behavior ProhibitedBehaviorDefRef '{req.Behavior.ProhibitedBehaviorDefRef}' does not exist in BehaviorCatalog."));
+            }
+
+            if (string.IsNullOrWhiteSpace(req.Behavior.TargetTermRef)
+                || !glossaryById.TryGetValue(req.Behavior.TargetTermRef, out var targetTerm))
             {
                 diagnostics.Add(new LintDiagnostic(
                     LintSeverity.Error,
                     RuleMissingReference,
                     req.Id,
                     $"Behavior TargetTermRef '{req.Behavior.TargetTermRef}' does not exist in Glossary."));
+            }
+            else if (behaviorDef is not null && !behaviorDef.AllowedTargetTypes.Contains(targetTerm.ConceptType))
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Error,
+                    RuleConceptTypeMismatch,
+                    req.Id,
+                    $"Behavior '{behaviorDef.BehaviorDefId}' on '{req.Id}' does not allow target '{targetTerm.Id}' with ConceptType '{targetTerm.ConceptType}'."));
             }
         }
     }
@@ -308,13 +348,13 @@ public sealed class GraphLinter
                 $"Behavior ToValue '{req.Behavior.ToValue}' is not valid for '{targetTerm.Id}' ({FormatLogicalDomain(targetTerm.LogicalType)})."));
         }
 
-        if (req.Behavior.SetValue is not null && !targetTerm.LogicalType.IsValidValue(req.Behavior.SetValue))
+        if (req.Behavior.ProhibitedToValue is not null && !targetTerm.LogicalType.IsValidValue(req.Behavior.ProhibitedToValue))
         {
             diagnostics.Add(new LintDiagnostic(
                 LintSeverity.Error,
                 RuleLogicalDomainViolation,
                 req.Id,
-                $"Behavior SetValue '{req.Behavior.SetValue}' is not valid for '{targetTerm.Id}' ({FormatLogicalDomain(targetTerm.LogicalType)})."));
+                $"Behavior ProhibitedToValue '{req.Behavior.ProhibitedToValue}' is not valid for '{targetTerm.Id}' ({FormatLogicalDomain(targetTerm.LogicalType)})."));
         }
     }
 
@@ -352,7 +392,7 @@ public sealed class GraphLinter
 
     private static void ValidateBehaviorIntegrity(
         CanonicalRequirementNode req,
-        Dictionary<string, ApprovedGlossaryTerm> glossaryById,
+        Dictionary<string, BehaviorDefinition> behaviorCatalogById,
         List<LintDiagnostic> diagnostics)
     {
         if (req.Behavior is null)
@@ -361,43 +401,40 @@ public sealed class GraphLinter
         }
 
         var behavior = req.Behavior;
-        switch (behavior.Kind)
+        if (string.IsNullOrWhiteSpace(behavior.BehaviorDefRef)
+            || !behaviorCatalogById.TryGetValue(behavior.BehaviorDefRef, out var behaviorDef))
         {
-            case BehaviorKind.TRANSITION:
-                if (string.IsNullOrWhiteSpace(behavior.FromValue) || string.IsNullOrWhiteSpace(behavior.ToValue))
-                {
-                    diagnostics.Add(new LintDiagnostic(
-                        LintSeverity.Error,
-                        RuleBehaviorFieldIntegrity,
-                        req.Id,
-                        $"BehaviorKind 'TRANSITION' on '{req.Id}' requires both FromValue and ToValue."));
-                }
-                break;
+            return;
+        }
 
-            case BehaviorKind.SET:
-                if (string.IsNullOrWhiteSpace(behavior.SetValue))
-                {
-                    diagnostics.Add(new LintDiagnostic(
-                        LintSeverity.Error,
-                        RuleBehaviorFieldIntegrity,
-                        req.Id,
-                        $"BehaviorKind 'SET' on '{req.Id}' requires SetValue."));
-                }
-                break;
+        if (behaviorDef.RequiresFromValue && string.IsNullOrWhiteSpace(behavior.FromValue))
+        {
+            diagnostics.Add(new LintDiagnostic(
+                LintSeverity.Error,
+                RuleBehaviorFieldIntegrity,
+                req.Id,
+                $"Behavior '{behaviorDef.BehaviorDefId}' on '{req.Id}' requires FromValue."));
+        }
 
-            case BehaviorKind.CREATE:
-            case BehaviorKind.DELETE:
-                if (!string.IsNullOrWhiteSpace(behavior.TargetTermRef)
-                    && glossaryById.TryGetValue(behavior.TargetTermRef, out var targetTerm)
-                    && targetTerm.ConceptType != ConceptType.DomainObject)
-                {
-                    diagnostics.Add(new LintDiagnostic(
-                        LintSeverity.Error,
-                        RuleBehaviorFieldIntegrity,
-                        req.Id,
-                        $"BehaviorKind '{behavior.Kind}' on '{req.Id}' requires target '{targetTerm.Id}' to have ConceptType '{ConceptType.DomainObject}', but found '{targetTerm.ConceptType}'."));
-                }
-                break;
+        if (behaviorDef.RequiresToValue && string.IsNullOrWhiteSpace(behavior.ToValue))
+        {
+            diagnostics.Add(new LintDiagnostic(
+                LintSeverity.Error,
+                RuleBehaviorFieldIntegrity,
+                req.Id,
+                $"Behavior '{behaviorDef.BehaviorDefId}' on '{req.Id}' requires ToValue."));
+        }
+
+        if (behaviorDef.Effect == SemanticEffect.Prohibit
+            && !string.IsNullOrWhiteSpace(behavior.ProhibitedBehaviorDefRef)
+            && behaviorCatalogById.TryGetValue(behavior.ProhibitedBehaviorDefRef, out var prohibitedDef)
+            && prohibitedDef.Effect == SemanticEffect.Prohibit)
+        {
+            diagnostics.Add(new LintDiagnostic(
+                LintSeverity.Error,
+                RuleBehaviorFieldIntegrity,
+                req.Id,
+                $"Behavior '{behaviorDef.BehaviorDefId}' on '{req.Id}' cannot reference '{prohibitedDef.BehaviorDefId}' in ProhibitedBehaviorDefRef because its Effect is also '{SemanticEffect.Prohibit}'."));
         }
     }
 
@@ -425,6 +462,7 @@ public sealed class GraphLinter
     private static void ValidateRequirementConflicts(
         List<CanonicalRequirementNode> requirements,
         Dictionary<string, ApprovedGlossaryTerm> glossaryById,
+        Dictionary<string, BehaviorDefinition> behaviorCatalogById,
         List<LintDiagnostic> diagnostics)
     {
         var atomics = requirements
@@ -448,7 +486,7 @@ public sealed class GraphLinter
                     continue;
                 }
 
-                var conflictReason = DetectBehaviorConflict(a.Behavior!, b.Behavior!);
+                var conflictReason = DetectBehaviorConflict(a.Behavior!, b.Behavior!, behaviorCatalogById);
                 if (conflictReason is null)
                 {
                     continue;
@@ -566,7 +604,10 @@ public sealed class GraphLinter
         return allowed;
     }
 
-    private static string? DetectBehaviorConflict(BehaviorNode a, BehaviorNode b)
+    private static string? DetectBehaviorConflict(
+        BehaviorNode a,
+        BehaviorNode b,
+        Dictionary<string, BehaviorDefinition> behaviorCatalogById)
     {
         if (string.IsNullOrWhiteSpace(a.TargetTermRef)
             || !string.Equals(a.TargetTermRef, b.TargetTermRef, StringComparison.Ordinal))
@@ -574,13 +615,27 @@ public sealed class GraphLinter
             return null;
         }
 
-        // 1. 許可 vs 禁止の衝突
-        if ((a.Kind == BehaviorKind.PROHIBIT) != (b.Kind == BehaviorKind.PROHIBIT))
+        if (string.IsNullOrWhiteSpace(a.BehaviorDefRef)
+            || string.IsNullOrWhiteSpace(b.BehaviorDefRef)
+            || !behaviorCatalogById.TryGetValue(a.BehaviorDefRef, out var defA)
+            || !behaviorCatalogById.TryGetValue(b.BehaviorDefRef, out var defB))
         {
-            var prohibit = a.Kind == BehaviorKind.PROHIBIT ? a : b;
-            var allow = a.Kind == BehaviorKind.PROHIBIT ? b : a;
+            return null;
+        }
 
-            if (prohibit.ProhibitedAction is null || prohibit.ProhibitedAction == allow.Kind)
+        // 1. 許可 vs 禁止の衝突
+        if ((defA.Effect == SemanticEffect.Prohibit) != (defB.Effect == SemanticEffect.Prohibit))
+        {
+            var prohibit = defA.Effect == SemanticEffect.Prohibit ? a : b;
+            var other = defA.Effect == SemanticEffect.Prohibit ? b : a;
+
+            var actionMatches = string.IsNullOrWhiteSpace(prohibit.ProhibitedBehaviorDefRef)
+                || string.Equals(prohibit.ProhibitedBehaviorDefRef, other.BehaviorDefRef, StringComparison.Ordinal);
+
+            var toValueMatches = string.IsNullOrWhiteSpace(prohibit.ProhibitedToValue)
+                || string.Equals(prohibit.ProhibitedToValue, other.ToValue, StringComparison.Ordinal);
+
+            if (actionMatches && toValueMatches)
             {
                 return "allow vs prohibit contradiction";
             }
@@ -588,8 +643,8 @@ public sealed class GraphLinter
             return null;
         }
 
-        // 2. Non-deterministic value conflict (TRANSITION / SET)
-        if (a.Kind == BehaviorKind.TRANSITION && b.Kind == BehaviorKind.TRANSITION)
+        // 2. Non-deterministic value conflict (MutateState vs MutateState)
+        if (defA.Effect == SemanticEffect.MutateState && defB.Effect == SemanticEffect.MutateState)
         {
             var fromOverlaps = string.IsNullOrWhiteSpace(a.FromValue)
                 || string.IsNullOrWhiteSpace(b.FromValue)
@@ -601,31 +656,7 @@ public sealed class GraphLinter
 
             if (fromOverlaps && toDiffers)
             {
-                return "conflicting transition targets";
-            }
-        }
-        else if (a.Kind == BehaviorKind.SET && b.Kind == BehaviorKind.SET)
-        {
-            var setDiffers = !string.IsNullOrWhiteSpace(a.SetValue)
-                && !string.IsNullOrWhiteSpace(b.SetValue)
-                && !string.Equals(a.SetValue, b.SetValue, StringComparison.Ordinal);
-
-            if (setDiffers)
-            {
-                return "conflicting set values";
-            }
-        }
-        else if ((a.Kind == BehaviorKind.SET && b.Kind == BehaviorKind.TRANSITION)
-                 || (a.Kind == BehaviorKind.TRANSITION && b.Kind == BehaviorKind.SET))
-        {
-            var setNode = a.Kind == BehaviorKind.SET ? a : b;
-            var transNode = a.Kind == BehaviorKind.TRANSITION ? a : b;
-
-            if (!string.IsNullOrWhiteSpace(setNode.SetValue)
-                && !string.IsNullOrWhiteSpace(transNode.ToValue)
-                && !string.Equals(setNode.SetValue, transNode.ToValue, StringComparison.Ordinal))
-            {
-                return "conflicting set value and transition target";
+                return "conflicting state mutation targets";
             }
         }
 

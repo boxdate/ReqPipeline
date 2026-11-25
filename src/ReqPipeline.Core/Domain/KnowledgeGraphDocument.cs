@@ -12,6 +12,7 @@ public sealed class KnowledgeGraphDocument
 
     public List<RationaleNode> Rationales { get; set; } = [];
     public List<ApprovedGlossaryTerm> Glossary { get; set; } = [];
+    public List<BehaviorDefinition> BehaviorCatalog { get; set; } = [];
     public List<CanonicalRequirementNode> Requirements { get; set; } = [];
     public List<FreeTextEscapeRecord> EscapeRecords { get; set; } = [];
     public List<UserJourney> Journeys { get; set; } = [];

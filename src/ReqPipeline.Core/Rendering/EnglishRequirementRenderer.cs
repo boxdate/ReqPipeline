@@ -7,7 +7,8 @@ public sealed class EnglishRequirementRenderer
     public static string Render(
         CanonicalRequirementNode node,
         IReadOnlyList<ApprovedGlossaryTerm> glossary,
-        IReadOnlyList<FreeTextEscapeRecord>? escapeRecords = null)
+        IReadOnlyList<FreeTextEscapeRecord>? escapeRecords = null,
+        IReadOnlyList<BehaviorDefinition>? behaviorCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(glossary);
@@ -21,13 +22,27 @@ public sealed class EnglishRequirementRenderer
             }
         }
 
-        return Render(node, glossaryById, escapeRecords);
+        Dictionary<string, BehaviorDefinition>? behaviorCatalogById = null;
+        if (behaviorCatalog is not null)
+        {
+            behaviorCatalogById = new Dictionary<string, BehaviorDefinition>(StringComparer.Ordinal);
+            foreach (var def in behaviorCatalog)
+            {
+                if (!string.IsNullOrWhiteSpace(def.BehaviorDefId))
+                {
+                    behaviorCatalogById.TryAdd(def.BehaviorDefId, def);
+                }
+            }
+        }
+
+        return Render(node, glossaryById, escapeRecords, behaviorCatalogById);
     }
 
     public static string Render(
         CanonicalRequirementNode node,
         IReadOnlyDictionary<string, ApprovedGlossaryTerm> glossaryById,
-        IReadOnlyList<FreeTextEscapeRecord>? escapeRecords = null)
+        IReadOnlyList<FreeTextEscapeRecord>? escapeRecords = null,
+        IReadOnlyDictionary<string, BehaviorDefinition>? behaviorCatalogById = null)
     {
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(glossaryById);
@@ -64,7 +79,7 @@ public sealed class EnglishRequirementRenderer
 
         var preconditions = FormatPreconditions(node.Preconditions, glossaryById);
         var timing = FormatTiming(node.Behavior.Timing);
-        var behaviorClause = FormatBehavior(node.Behavior, glossaryById);
+        var behaviorClause = FormatBehavior(node.Behavior, glossaryById, behaviorCatalogById);
         var coreClause = $"the {subject} shall {timing}{behaviorClause}.";
 
         return node.EarsPattern switch
@@ -196,22 +211,59 @@ public sealed class EnglishRequirementRenderer
 
     private static string FormatBehavior(
         BehaviorNode behavior,
-        IReadOnlyDictionary<string, ApprovedGlossaryTerm> glossaryById)
+        IReadOnlyDictionary<string, ApprovedGlossaryTerm> glossaryById,
+        IReadOnlyDictionary<string, BehaviorDefinition>? behaviorCatalogById)
     {
         var target = ResolveCanonicalName(behavior.TargetTermRef, glossaryById, behavior.TargetTermRef);
 
-        return behavior.Kind switch
+        if (behaviorCatalogById is null
+            || string.IsNullOrWhiteSpace(behavior.BehaviorDefRef)
+            || !behaviorCatalogById.TryGetValue(behavior.BehaviorDefRef, out var behaviorDef))
         {
-            BehaviorKind.CREATE => $"create {target}",
-            BehaviorKind.SET => $"set {target} to {behavior.SetValue}",
-            BehaviorKind.DELETE => $"delete {target}",
-            BehaviorKind.TRANSITION => $"transition {target} from {behavior.FromValue} to {behavior.ToValue}",
-            BehaviorKind.DISPLAY => $"display {target}",
-            BehaviorKind.PROHIBIT => behavior.ProhibitedAction.HasValue
-                ? $"prohibit {behavior.ProhibitedAction.Value} on {target}"
-                : $"prohibit operations on {target}",
-            _ => $"process {target}"
-        };
+            return string.IsNullOrWhiteSpace(behavior.BehaviorDefRef)
+                ? $"process {target}"
+                : $"execute {behavior.BehaviorDefRef} on {target}";
+        }
+
+        var from = behavior.FromValue ?? string.Empty;
+        var rawTo = behaviorDef.Effect == SemanticEffect.Prohibit
+            ? behavior.ProhibitedToValue
+            : behavior.ToValue;
+        var to = rawTo ?? string.Empty;
+
+        var prohibitedAction = "any action";
+        if (!string.IsNullOrWhiteSpace(behavior.ProhibitedBehaviorDefRef))
+        {
+            if (behaviorCatalogById.TryGetValue(behavior.ProhibitedBehaviorDefRef, out var prohibitedDef)
+                && !string.IsNullOrWhiteSpace(prohibitedDef.CanonicalLabel))
+            {
+                prohibitedAction = prohibitedDef.CanonicalLabel;
+            }
+            else
+            {
+                prohibitedAction = behavior.ProhibitedBehaviorDefRef;
+            }
+        }
+
+        var template = !string.IsNullOrWhiteSpace(behaviorDef.EnglishTemplate)
+            ? behaviorDef.EnglishTemplate
+            : "process {target}";
+
+        var hasToPlaceholder = template.Contains("{to}", StringComparison.Ordinal);
+        var rendered = template
+            .Replace("{target}", target, StringComparison.Ordinal)
+            .Replace("{from}", from, StringComparison.Ordinal)
+            .Replace("{to}", to, StringComparison.Ordinal)
+            .Replace("{prohibitedAction}", prohibitedAction, StringComparison.Ordinal);
+
+        if (behaviorDef.Effect == SemanticEffect.Prohibit
+            && !hasToPlaceholder
+            && !string.IsNullOrWhiteSpace(behavior.ProhibitedToValue))
+        {
+            rendered += $" (to {to})";
+        }
+
+        return rendered;
     }
 
     private static string ResolveCanonicalName(

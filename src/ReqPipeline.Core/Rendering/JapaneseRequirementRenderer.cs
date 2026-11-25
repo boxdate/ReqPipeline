@@ -7,7 +7,8 @@ public sealed class JapaneseRequirementRenderer
     public static string Render(
         CanonicalRequirementNode node,
         IReadOnlyList<ApprovedGlossaryTerm> glossary,
-        IReadOnlyList<FreeTextEscapeRecord>? escapeRecords = null)
+        IReadOnlyList<FreeTextEscapeRecord>? escapeRecords = null,
+        IReadOnlyList<BehaviorDefinition>? behaviorCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(glossary);
@@ -21,13 +22,27 @@ public sealed class JapaneseRequirementRenderer
             }
         }
 
-        return Render(node, glossaryById, escapeRecords);
+        Dictionary<string, BehaviorDefinition>? behaviorCatalogById = null;
+        if (behaviorCatalog is not null)
+        {
+            behaviorCatalogById = new Dictionary<string, BehaviorDefinition>(StringComparer.Ordinal);
+            foreach (var def in behaviorCatalog)
+            {
+                if (!string.IsNullOrWhiteSpace(def.BehaviorDefId))
+                {
+                    behaviorCatalogById.TryAdd(def.BehaviorDefId, def);
+                }
+            }
+        }
+
+        return Render(node, glossaryById, escapeRecords, behaviorCatalogById);
     }
 
     public static string Render(
         CanonicalRequirementNode node,
         IReadOnlyDictionary<string, ApprovedGlossaryTerm> glossaryById,
-        IReadOnlyList<FreeTextEscapeRecord>? escapeRecords = null)
+        IReadOnlyList<FreeTextEscapeRecord>? escapeRecords = null,
+        IReadOnlyDictionary<string, BehaviorDefinition>? behaviorCatalogById = null)
     {
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(glossaryById);
@@ -64,7 +79,7 @@ public sealed class JapaneseRequirementRenderer
 
         var preconditions = FormatPreconditions(node.Preconditions, glossaryById);
         var timing = FormatTiming(node.Behavior.Timing);
-        var behaviorClause = FormatBehavior(node.Behavior, glossaryById);
+        var behaviorClause = FormatBehavior(node.Behavior, glossaryById, behaviorCatalogById);
         var coreAction = $"{subject}は、{timing}{behaviorClause}。";
 
         return node.EarsPattern switch
@@ -199,34 +214,60 @@ public sealed class JapaneseRequirementRenderer
 
     private static string FormatBehavior(
         BehaviorNode behavior,
-        IReadOnlyDictionary<string, ApprovedGlossaryTerm> glossaryById)
+        IReadOnlyDictionary<string, ApprovedGlossaryTerm> glossaryById,
+        IReadOnlyDictionary<string, BehaviorDefinition>? behaviorCatalogById)
     {
         var target = ResolveTermName(behavior.TargetTermRef, glossaryById, behavior.TargetTermRef);
 
-        return behavior.Kind switch
+        if (behaviorCatalogById is null
+            || string.IsNullOrWhiteSpace(behavior.BehaviorDefRef)
+            || !behaviorCatalogById.TryGetValue(behavior.BehaviorDefRef, out var behaviorDef))
         {
-            BehaviorKind.CREATE => $"{target}を作成すること",
-            BehaviorKind.SET => $"{target}を{ResolveValueLabel(behavior.TargetTermRef, behavior.SetValue, glossaryById)}に設定すること",
-            BehaviorKind.DELETE => $"{target}を削除すること",
-            BehaviorKind.TRANSITION => $"{target}を{ResolveValueLabel(behavior.TargetTermRef, behavior.FromValue, glossaryById)}から{ResolveValueLabel(behavior.TargetTermRef, behavior.ToValue, glossaryById)}へ遷移すること",
-            BehaviorKind.DISPLAY => $"{target}を表示すること",
-            BehaviorKind.PROHIBIT => behavior.ProhibitedAction.HasValue
-                ? $"{target}の{FormatActionNoun(behavior.ProhibitedAction.Value)}を禁止すること"
-                : $"{target}に対する操作を禁止すること",
-            _ => $"{target}を処理すること"
-        };
-    }
+            return string.IsNullOrWhiteSpace(behavior.BehaviorDefRef)
+                ? $"{target}を処理すること"
+                : $"{target}に対して{behavior.BehaviorDefRef}を実行すること";
+        }
 
-    private static string FormatActionNoun(BehaviorKind kind) => kind switch
-    {
-        BehaviorKind.CREATE => "作成",
-        BehaviorKind.SET => "設定",
-        BehaviorKind.DELETE => "削除",
-        BehaviorKind.TRANSITION => "遷移",
-        BehaviorKind.DISPLAY => "表示",
-        BehaviorKind.PROHIBIT => "禁止",
-        _ => "操作"
-    };
+        var from = ResolveValueLabel(behavior.TargetTermRef, behavior.FromValue, glossaryById);
+        var rawTo = behaviorDef.Effect == SemanticEffect.Prohibit
+            ? behavior.ProhibitedToValue
+            : behavior.ToValue;
+        var to = ResolveValueLabel(behavior.TargetTermRef, rawTo, glossaryById);
+
+        var prohibitedAction = "操作";
+        if (!string.IsNullOrWhiteSpace(behavior.ProhibitedBehaviorDefRef))
+        {
+            if (behaviorCatalogById.TryGetValue(behavior.ProhibitedBehaviorDefRef, out var prohibitedDef)
+                && !string.IsNullOrWhiteSpace(prohibitedDef.JapaneseLabel))
+            {
+                prohibitedAction = prohibitedDef.JapaneseLabel;
+            }
+            else
+            {
+                prohibitedAction = behavior.ProhibitedBehaviorDefRef;
+            }
+        }
+
+        var template = !string.IsNullOrWhiteSpace(behaviorDef.JapaneseTemplate)
+            ? behaviorDef.JapaneseTemplate
+            : "{target}を処理すること";
+
+        var hasToPlaceholder = template.Contains("{to}", StringComparison.Ordinal);
+        var rendered = template
+            .Replace("{target}", target, StringComparison.Ordinal)
+            .Replace("{from}", from, StringComparison.Ordinal)
+            .Replace("{to}", to, StringComparison.Ordinal)
+            .Replace("{prohibitedAction}", prohibitedAction, StringComparison.Ordinal);
+
+        if (behaviorDef.Effect == SemanticEffect.Prohibit
+            && !hasToPlaceholder
+            && !string.IsNullOrWhiteSpace(behavior.ProhibitedToValue))
+        {
+            rendered += $"（遷移先: {to}）";
+        }
+
+        return rendered;
+    }
 
     private static string ResolveTermName(
         string? termRef,

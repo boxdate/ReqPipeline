@@ -6,13 +6,14 @@ namespace ReqPipeline.Web.Services;
 
 public sealed class WorkspaceStateService
 {
-    private readonly string? _samplePath;
+    private readonly string _contentRootPath;
 
     public KnowledgeGraphDocument Document { get; private set; } = new();
     public IReadOnlyList<LintDiagnostic> Diagnostics { get; private set; } = [];
     public string? SelectedRequirementId { get; private set; }
     public string? SelectedRationaleId { get; private set; }
     public string? LastErrorMessage { get; private set; }
+    public string ActiveSampleKey { get; private set; } = "crud";
 
     public int ErrorCount => Diagnostics.Count(d => d.Severity == LintSeverity.Error);
     public int WarningCount => Diagnostics.Count(d => d.Severity == LintSeverity.Warning);
@@ -21,36 +22,72 @@ public sealed class WorkspaceStateService
 
     public WorkspaceStateService(IWebHostEnvironment env)
     {
-        _samplePath = FindSampleFile(env.ContentRootPath) ?? FindSampleFile(AppContext.BaseDirectory);
+        _contentRootPath = env.ContentRootPath;
         LoadSampleOrDefault();
     }
 
     public void LoadSampleOrDefault()
     {
-        LastErrorMessage = null;
-        if (_samplePath is not null && File.Exists(_samplePath))
-        {
-            try
-            {
-                var json = File.ReadAllText(_samplePath);
-                Document = KnowledgeGraphDocument.FromJson(json);
-            }
-            catch (Exception ex)
-            {
-                LastErrorMessage = $"サンプルJSONの読み込みに失敗しました: {ex.Message}";
-                Document = CreateEmptyDocument();
-            }
-        }
-        else
+        if (!TryLoadSample("crud", out _))
         {
             Document = CreateEmptyDocument();
+            ActiveSampleKey = string.Empty;
+            SelectedRequirementId = null;
+            SelectedRationaleId = null;
+            RefreshLintAndNotify();
+        }
+    }
+
+    public bool TryLoadSample(string sampleKey, out string? error)
+    {
+        var fileName = sampleKey switch
+        {
+            "crud" => "crud-sample.v2.json",
+            "doorlock" => "doorlock-sample.v2.json",
+            _ => null
+        };
+
+        if (fileName is null)
+        {
+            error = $"未知のサンプルキー '{sampleKey}' です。";
+            LastErrorMessage = error;
+            OnChange?.Invoke();
+            return false;
         }
 
-        SelectedRequirementId = Document.Requirements
-            .FirstOrDefault(r => r.NodeKind == RequirementNodeKind.Atomic)?.Id
-            ?? Document.Requirements.FirstOrDefault()?.Id;
+        var path = FindSampleFile(_contentRootPath, fileName)
+            ?? FindSampleFile(AppContext.BaseDirectory, fileName);
 
-        RefreshLintAndNotify();
+        if (path is null || !File.Exists(path))
+        {
+            error = $"サンプルファイル 'samples/{fileName}' が見つかりませんでした。";
+            LastErrorMessage = error;
+            OnChange?.Invoke();
+            return false;
+        }
+
+        try
+        {
+            var json = File.ReadAllText(path);
+            Document = KnowledgeGraphDocument.FromJson(json);
+            ActiveSampleKey = sampleKey;
+            LastErrorMessage = null;
+            error = null;
+            SelectedRationaleId = null;
+            SelectedRequirementId = Document.Requirements
+                .FirstOrDefault(r => r.NodeKind == RequirementNodeKind.Atomic)?.Id
+                ?? Document.Requirements.FirstOrDefault()?.Id;
+
+            RefreshLintAndNotify();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"サンプルJSONの読み込みに失敗しました: {ex.Message}";
+            LastErrorMessage = error;
+            OnChange?.Invoke();
+            return false;
+        }
     }
 
     public void SelectRequirement(string? requirementId)
@@ -122,6 +159,8 @@ public sealed class WorkspaceStateService
         {
             var imported = KnowledgeGraphDocument.FromJson(json);
             Document = imported;
+            ActiveSampleKey = string.Empty;
+            SelectedRationaleId = null;
             SelectedRequirementId = Document.Requirements
                 .FirstOrDefault(r => r.NodeKind == RequirementNodeKind.Atomic)?.Id
                 ?? Document.Requirements.FirstOrDefault()?.Id;
@@ -174,7 +213,7 @@ public sealed class WorkspaceStateService
             return string.Empty;
         }
 
-        return JapaneseRequirementRenderer.Render(node, Document.Glossary, Document.EscapeRecords);
+        return JapaneseRequirementRenderer.Render(node, Document.Glossary, Document.EscapeRecords, Document.BehaviorCatalog);
     }
 
     public string RenderEnglishPreview(CanonicalRequirementNode node)
@@ -184,7 +223,60 @@ public sealed class WorkspaceStateService
             return string.Empty;
         }
 
-        return EnglishRequirementRenderer.Render(node, Document.Glossary, Document.EscapeRecords);
+        return EnglishRequirementRenderer.Render(node, Document.Glossary, Document.EscapeRecords, Document.BehaviorCatalog);
+    }
+
+    public BehaviorDefinition? FindBehaviorDefinition(string? behaviorDefId)
+    {
+        if (string.IsNullOrWhiteSpace(behaviorDefId))
+        {
+            return null;
+        }
+
+        return Document.BehaviorCatalog.FirstOrDefault(
+            b => string.Equals(b.BehaviorDefId, behaviorDefId, StringComparison.Ordinal));
+    }
+
+    public BehaviorNode CreateDefaultBehaviorNode()
+    {
+        var defaultBehavior = Document.BehaviorCatalog.FirstOrDefault(b => b.BehaviorDefId == "BEH-DISPLAY")
+            ?? Document.BehaviorCatalog.FirstOrDefault(b => b.Effect is SemanticEffect.EmitAction or SemanticEffect.ManageEntity)
+            ?? Document.BehaviorCatalog.FirstOrDefault();
+
+        var defaultTarget = defaultBehavior is not null && defaultBehavior.AllowedTargetTypes.Count > 0
+            ? Document.Glossary.FirstOrDefault(g => defaultBehavior.AllowedTargetTypes.Contains(g.ConceptType))?.Id
+            : null;
+
+        defaultTarget ??= Document.Glossary.FirstOrDefault(g => g.ConceptType == ConceptType.DomainObject)?.Id
+            ?? Document.Glossary.FirstOrDefault()?.Id
+            ?? string.Empty;
+
+        var node = new BehaviorNode
+        {
+            BehaviorDefRef = defaultBehavior?.BehaviorDefId ?? string.Empty,
+            TargetTermRef = defaultTarget,
+            Timing = TimingKind.UNSPECIFIED
+        };
+
+        if (defaultBehavior is not null && !string.IsNullOrWhiteSpace(defaultTarget))
+        {
+            var allowed = GetAllowedValues(defaultTarget);
+            if (defaultBehavior.RequiresFromValue && defaultBehavior.RequiresToValue && allowed.Count >= 2)
+            {
+                node.FromValue = allowed[0];
+                node.ToValue = allowed[1];
+            }
+            else if (defaultBehavior.RequiresToValue && allowed.Count >= 1)
+            {
+                node.ToValue = allowed[0];
+            }
+            else if (defaultBehavior.RequiresFromValue && allowed.Count >= 1)
+            {
+                node.FromValue = allowed[0];
+            }
+        }
+
+        return node;
     }
 
     public IReadOnlyList<LintDiagnostic> GetDiagnosticsForRequirement(string requirementId)
@@ -275,9 +367,6 @@ public sealed class WorkspaceStateService
 
         var defaultSystem = parent.SubjectSystemRef
             ?? Document.Glossary.FirstOrDefault(g => g.ConceptType == ConceptType.System)?.Id;
-        var defaultDomainObj = Document.Glossary.FirstOrDefault(g => g.ConceptType == ConceptType.DomainObject)?.Id
-            ?? Document.Glossary.FirstOrDefault()?.Id
-            ?? string.Empty;
 
         var child = new CanonicalRequirementNode
         {
@@ -299,12 +388,7 @@ public sealed class WorkspaceStateService
                     ExpectedValues = [.. p.ExpectedValues]
                 })
                 .ToList(),
-            Behavior = new BehaviorNode
-            {
-                Kind = BehaviorKind.DISPLAY,
-                TargetTermRef = defaultDomainObj,
-                Timing = TimingKind.UNSPECIFIED
-            }
+            Behavior = CreateDefaultBehaviorNode()
         };
 
         Document.Requirements.Add(child);
@@ -407,17 +491,20 @@ public sealed class WorkspaceStateService
             esc.ResolutionNote = "構造化スロットへ再変換済み";
         }
 
-        var defaultTarget = Document.Glossary.FirstOrDefault(g => g.ConceptType == ConceptType.DomainObject)?.Id
-            ?? Document.Glossary.FirstOrDefault()?.Id
-            ?? string.Empty;
+        node.Behavior = CreateDefaultBehaviorNode();
 
-        node.Behavior = new BehaviorNode
-        {
-            Kind = BehaviorKind.DISPLAY,
-            TargetTermRef = defaultTarget,
-            Timing = TimingKind.UNSPECIFIED
-        };
+        RefreshLintAndNotify();
+    }
 
+    public void AddBehaviorDefinition(BehaviorDefinition definition)
+    {
+        Document.BehaviorCatalog.Add(definition);
+        RefreshLintAndNotify();
+    }
+
+    public void DeleteBehaviorDefinition(string behaviorDefId)
+    {
+        Document.BehaviorCatalog.RemoveAll(b => string.Equals(b.BehaviorDefId, behaviorDefId, StringComparison.Ordinal));
         RefreshLintAndNotify();
     }
 
@@ -529,12 +616,12 @@ public sealed class WorkspaceStateService
         OnChange?.Invoke();
     }
 
-    private static string? FindSampleFile(string startDir)
+    private static string? FindSampleFile(string startDir, string fileName)
     {
         var dir = new DirectoryInfo(startDir);
         while (dir is not null)
         {
-            var candidate = Path.Combine(dir.FullName, "samples", "crud-sample.v2.json");
+            var candidate = Path.Combine(dir.FullName, "samples", fileName);
             if (File.Exists(candidate))
             {
                 return candidate;
