@@ -24,5 +24,35 @@ window.reqPipelineV2 = {
         const ok = document.execCommand("copy");
         document.body.removeChild(textarea);
         return ok;
+    },
+    _mermaidInitialized: false,
+    _mermaidRenderSeq: 0,
+    renderMermaid: async function (elementId, code) {
+        const container = document.getElementById(elementId);
+        if (!container) {
+            return false;
+        }
+        if (typeof window.mermaid === "undefined") {
+            container.textContent = "Mermaid.js が読み込まれていません（オフライン環境の可能性があります）。";
+            return false;
+        }
+        try {
+            if (!this._mermaidInitialized) {
+                window.mermaid.initialize({
+                    startOnLoad: false,
+                    securityLevel: "strict",
+                    theme: "default"
+                });
+                this._mermaidInitialized = true;
+            }
+            this._mermaidRenderSeq += 1;
+            const renderId = "mermaid-svg-" + this._mermaidRenderSeq;
+            const result = await window.mermaid.render(renderId, code);
+            container.innerHTML = result.svg;
+            return true;
+        } catch (err) {
+            container.textContent = "Mermaid 描画エラー: " + (err && err.message ? err.message : String(err));
+            return false;
+        }
     }
 };

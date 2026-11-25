@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using ReqPipeline.Core.Analysis;
 using ReqPipeline.Core.Domain;
 
 namespace ReqPipeline.Core.Validation;
@@ -30,6 +31,8 @@ public sealed class GraphLinter
     public const string RuleGlossarySymbolConvention = "LINT-009";
     public const string RuleGlossaryValueLabelsIntegrity = "LINT-010";
     public const string RuleDeprecatedLabelUsage = "LINT-011";
+    public const string RuleFsmCompleteness = "LINT-012";
+    public const string RuleUnusedGlossaryTerm = "LINT-013";
 
     private static readonly Regex AsciiSymbolRegex = new("^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.Compiled);
 
@@ -115,6 +118,8 @@ public sealed class GraphLinter
         ValidateRequirementConflicts(document.Requirements, glossaryById, diagnostics);
         ValidateGlossaryDefinitions(document.Glossary, diagnostics);
         ValidateDeprecatedLabelUsage(document, diagnostics);
+        ValidateFsmCompleteness(document, diagnostics);
+        ValidateUnusedGlossaryTerms(document, diagnostics);
 
         return diagnostics;
     }
@@ -781,6 +786,90 @@ public sealed class GraphLinter
                     RuleDeprecatedLabelUsage,
                     targetId,
                     $"{fieldName} on '{targetId}' contains deprecated label '{label}' (use '{sourceTerm.GetDisplayName()}' / '{sourceTerm.CanonicalName}' instead)."));
+            }
+        }
+    }
+
+    private static void ValidateFsmCompleteness(
+        KnowledgeGraphDocument document,
+        List<LintDiagnostic> diagnostics)
+    {
+        var fsmModels = FsmGraphBuilder.Build(document);
+        foreach (var model in fsmModels)
+        {
+            foreach (var state in model.States)
+            {
+                if (!state.IsReachable)
+                {
+                    diagnostics.Add(new LintDiagnostic(
+                        LintSeverity.Warning,
+                        RuleFsmCompleteness,
+                        model.StateTermId,
+                        $"State '{state.Value}' in LifecycleState '{model.CanonicalName}' is unreachable from initial state '{model.InitialState}'."));
+                }
+
+                if (state.IsSink && model.Transitions.Count > 0)
+                {
+                    diagnostics.Add(new LintDiagnostic(
+                        LintSeverity.Warning,
+                        RuleFsmCompleteness,
+                        model.StateTermId,
+                        $"State '{state.Value}' in LifecycleState '{model.CanonicalName}' is a dead-end (no outgoing transitions)."));
+                }
+            }
+        }
+    }
+
+    private static void ValidateUnusedGlossaryTerms(
+        KnowledgeGraphDocument document,
+        List<LintDiagnostic> diagnostics)
+    {
+        var referencedTermIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var req in document.Requirements)
+        {
+            if (!string.IsNullOrWhiteSpace(req.SubjectSystemRef))
+            {
+                referencedTermIds.Add(req.SubjectSystemRef);
+            }
+
+            if (!string.IsNullOrWhiteSpace(req.ActorRef))
+            {
+                referencedTermIds.Add(req.ActorRef);
+            }
+
+            if (!string.IsNullOrWhiteSpace(req.TriggerEventRef))
+            {
+                referencedTermIds.Add(req.TriggerEventRef);
+            }
+
+            foreach (var pre in req.Preconditions)
+            {
+                if (!string.IsNullOrWhiteSpace(pre.StateTermRef))
+                {
+                    referencedTermIds.Add(pre.StateTermRef);
+                }
+            }
+
+            if (req.Behavior is not null && !string.IsNullOrWhiteSpace(req.Behavior.TargetTermRef))
+            {
+                referencedTermIds.Add(req.Behavior.TargetTermRef);
+            }
+        }
+
+        foreach (var term in document.Glossary)
+        {
+            if (string.IsNullOrWhiteSpace(term.Id))
+            {
+                continue;
+            }
+
+            if (!referencedTermIds.Contains(term.Id))
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Warning,
+                    RuleUnusedGlossaryTerm,
+                    term.Id,
+                    $"Glossary term '{term.Id}' ('{term.CanonicalName}') is not referenced by any requirement."));
             }
         }
     }

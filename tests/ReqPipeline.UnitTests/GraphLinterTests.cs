@@ -81,11 +81,11 @@ public class GraphLinterTests
     };
 
     [Fact]
-    public void BaseDocument_HasNoDiagnostics()
+    public void BaseDocument_HasNoErrors()
     {
         var doc = CreateValidBaseDocument();
         var diagnostics = GraphLinter.Lint(doc);
-        Assert.Empty(diagnostics);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == LintSeverity.Error);
     }
 
     [Fact]
@@ -328,7 +328,8 @@ public class GraphLinterTests
 
         var diagnostics = GraphLinter.Lint(doc);
 
-        Assert.Empty(diagnostics);
+        Assert.DoesNotContain(diagnostics, d => d.RuleId == GraphLinter.RulePendingEscapeRecord);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == LintSeverity.Error);
     }
 
     [Fact]
@@ -667,5 +668,107 @@ public class GraphLinterTests
         Assert.All(lint011, d => Assert.Equal(LintSeverity.Error, d.Severity));
         Assert.Contains(lint011, d => d.TargetId == "REQ-1" && d.Message.Contains("スピード"));
         Assert.Contains(lint011, d => d.TargetId == "ESC-DEP" && d.Message.Contains("スピード"));
+    }
+
+    [Fact]
+    public void Lint012_FsmCompleteness_WarnsOnUnreachableAndDeadEndStates()
+    {
+        var doc = CreateValidBaseDocument();
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-1-2",
+            Title = "公開遷移",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-1",
+            RationaleRefs = ["RAT-1"],
+            EarsPattern = EarsEntryPattern.EventDriven,
+            SubjectSystemRef = "SYS-1",
+            ActorRef = "ACT-1",
+            TriggerEventRef = "EVT-1",
+            Behavior = new BehaviorNode
+            {
+                Kind = BehaviorKind.TRANSITION,
+                TargetTermRef = "LC-1",
+                FromValue = "Draft",
+                ToValue = "Published"
+            }
+        });
+
+        var diagnostics = GraphLinter.Lint(doc);
+        var fsmWarnings = diagnostics.Where(d => d.RuleId == GraphLinter.RuleFsmCompleteness).ToList();
+
+        Assert.NotEmpty(fsmWarnings);
+        Assert.All(fsmWarnings, d => Assert.Equal(LintSeverity.Warning, d.Severity));
+        Assert.Contains(fsmWarnings, d => d.TargetId == "LC-1" && d.Message.Contains("Published") && d.Message.Contains("dead-end"));
+        Assert.Contains(fsmWarnings, d => d.TargetId == "LC-1" && d.Message.Contains("Archived") && d.Message.Contains("unreachable"));
+    }
+
+    [Fact]
+    public void Lint012_FsmCompleteness_NoWarningWhenAllStatesReachableAndCyclic()
+    {
+        var doc = CreateValidBaseDocument();
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-1-2",
+            Title = "Draft to Published",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-1",
+            RationaleRefs = ["RAT-1"],
+            SubjectSystemRef = "SYS-1",
+            Behavior = new BehaviorNode { Kind = BehaviorKind.TRANSITION, TargetTermRef = "LC-1", FromValue = "Draft", ToValue = "Published" }
+        });
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-1-3",
+            Title = "Published to Archived",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-1",
+            RationaleRefs = ["RAT-1"],
+            SubjectSystemRef = "SYS-1",
+            Behavior = new BehaviorNode { Kind = BehaviorKind.TRANSITION, TargetTermRef = "LC-1", FromValue = "Published", ToValue = "Archived" }
+        });
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-1-4",
+            Title = "Archived to Draft",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-1",
+            RationaleRefs = ["RAT-1"],
+            SubjectSystemRef = "SYS-1",
+            Behavior = new BehaviorNode { Kind = BehaviorKind.TRANSITION, TargetTermRef = "LC-1", FromValue = "Archived", ToValue = "Draft" }
+        });
+
+        var diagnostics = GraphLinter.Lint(doc);
+        var fsmWarnings = diagnostics.Where(d => d.RuleId == GraphLinter.RuleFsmCompleteness).ToList();
+
+        Assert.Empty(fsmWarnings);
+    }
+
+    [Fact]
+    public void Lint013_UnusedGlossaryTerm_WarnsWhenUnreferencedAndClearWhenReferenced()
+    {
+        var doc = CreateValidBaseDocument();
+
+        // LC-1 is not referenced in BaseDocument
+        var diagnostics = GraphLinter.Lint(doc);
+        var unusedWarnings = diagnostics.Where(d => d.RuleId == GraphLinter.RuleUnusedGlossaryTerm).ToList();
+        var single = Assert.Single(unusedWarnings);
+        Assert.Equal(LintSeverity.Warning, single.Severity);
+        Assert.Equal("LC-1", single.TargetId);
+
+        // Reference LC-1 in a requirement
+        doc.Requirements.Add(new CanonicalRequirementNode
+        {
+            Id = "REQ-1-2",
+            Title = "遷移",
+            NodeKind = RequirementNodeKind.Atomic,
+            ParentRequirementId = "REQ-1",
+            RationaleRefs = ["RAT-1"],
+            SubjectSystemRef = "SYS-1",
+            Behavior = new BehaviorNode { Kind = BehaviorKind.TRANSITION, TargetTermRef = "LC-1", FromValue = "Draft", ToValue = "Published" }
+        });
+
+        var afterDiagnostics = GraphLinter.Lint(doc);
+        Assert.DoesNotContain(afterDiagnostics, d => d.RuleId == GraphLinter.RuleUnusedGlossaryTerm);
     }
 }

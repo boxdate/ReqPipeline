@@ -1,0 +1,344 @@
+@page "/fsm"
+@implements IDisposable
+@inject WorkspaceStateService Workspace
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>FSM View - ReqPipeline V2</PageTitle>
+
+<div class="container py-3" style="max-width: 1200px;">
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        <div>
+            <h4 class="fw-bold mb-0">FSM View (状態遷移図 &amp; 完全性チェック)</h4>
+            <div class="text-muted small">
+                <code>LifecycleState</code> に基づく決定論的 FSM 解析・Mermaid ライブ描画・状態ヘルス診断
+            </div>
+        </div>
+
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <div class="btn-group btn-group-sm" role="group" aria-label="ラベル表示モード">
+                <button type="button"
+                        class="btn @(_useJapaneseLabels ? "btn-primary" : "btn-outline-secondary")"
+                        @onclick="() => SetLabelMode(true)">
+                    日本語ラベル
+                </button>
+                <button type="button"
+                        class="btn @(!_useJapaneseLabels ? "btn-primary" : "btn-outline-secondary")"
+                        @onclick="() => SetLabelMode(false)">
+                    英語正本
+                </button>
+            </div>
+
+            @if (_selectedModel is not null)
+            {
+                @if (_copied)
+                {
+                    <span class="chip-badge chip-ok">コピーしました</span>
+                }
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CopyMermaid">
+                    Mermaid コピー
+                </button>
+                <button type="button" class="btn btn-sm btn-primary" @onclick="DownloadMermaid">
+                    .mmd ダウンロード
+                </button>
+            }
+        </div>
+    </div>
+
+    @if (_models.Count == 0)
+    {
+        <div class="slot-card text-center py-5">
+            <div class="fw-semibold mb-1">LifecycleState (Enum) が定義されていません</div>
+            <div class="text-muted small">
+                Glossary タブで <code>ConceptType = LifecycleState</code> かつ <code>LogicalType = Enum</code> の語彙を追加すると、ここに状態遷移図が表示されます。
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- LifecycleState 選択バー -->
+        <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+            <span class="small text-muted fw-semibold">LifecycleState:</span>
+            @foreach (var model in _models)
+            {
+                var isSelected = _selectedModel is not null
+                    && string.Equals(_selectedModel.StateTermId, model.StateTermId, StringComparison.Ordinal);
+                <button type="button"
+                        class="btn btn-sm @(isSelected ? "btn-primary" : "btn-outline-secondary")"
+                        @onclick="() => SelectModel(model.StateTermId)">
+                    @model.DisplayName <span class="opacity-75">(@model.CanonicalName)</span>
+                    <span class="badge @(isSelected ? "bg-light text-dark" : "bg-secondary") ms-1">@model.States.Count</span>
+                </button>
+            }
+        </div>
+
+        @if (_selectedModel is not null)
+        {
+            var mermaidCode = FsmMermaidRenderer.Render(_selectedModel, _useJapaneseLabels);
+            var hasTransitions = _selectedModel.Transitions.Count > 0;
+
+            <div class="row g-3">
+                <!-- 1. 状態遷移図 (Mermaid ライブ描画) -->
+                <div class="col-lg-7">
+                    <div class="slot-card h-100 d-flex flex-column">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <div class="wb-section-title mb-0">状態遷移図 (Mermaid Live Preview)</div>
+                            <span class="small text-muted">
+                                状態: @_selectedModel.States.Count / 遷移: @_selectedModel.Transitions.Count
+                            </span>
+                        </div>
+
+                        <div id="fsm-mermaid-container"
+                             class="border rounded bg-white p-3 mb-3 text-center flex-grow-1"
+                             style="min-height: 260px; overflow-x: auto;">
+                        </div>
+
+                        <details>
+                            <summary class="small text-muted" style="cursor: pointer;">Mermaid ソースを表示</summary>
+                            <pre class="bg-dark text-light p-3 rounded small mt-2 mb-0" style="white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">@mermaidCode</pre>
+                        </details>
+                    </div>
+                </div>
+
+                <!-- 2. 状態ヘルス一覧 -->
+                <div class="col-lg-5">
+                    <div class="slot-card h-100">
+                        <div class="wb-section-title">状態ヘルス一覧</div>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead>
+                                    <tr class="small text-muted">
+                                        <th>状態</th>
+                                        <th class="text-center">In / Out</th>
+                                        <th>ステータス</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var state in _selectedModel.States)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <div class="fw-semibold small">@state.Label</div>
+                                                <code class="small text-muted">@state.Value</code>
+                                            </td>
+                                            <td class="text-center small">
+                                                @state.IncomingCount / @state.OutgoingCount
+                                            </td>
+                                            <td>
+                                                <div class="d-flex flex-wrap gap-1">
+                                                    @if (state.IsInitial)
+                                                    {
+                                                        <span class="badge bg-primary">Initial</span>
+                                                    }
+                                                    @if (state.IsReachable)
+                                                    {
+                                                        <span class="badge bg-success">Reachable</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="badge bg-warning text-dark">⚠ Unreachable (@GraphLinter.RuleFsmCompleteness)</span>
+                                                    }
+                                                    @if (state.IsSink && hasTransitions)
+                                                    {
+                                                        <span class="badge bg-warning text-dark">⚠ Dead-end (@GraphLinter.RuleFsmCompleteness)</span>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. 遷移テーブル -->
+                <div class="col-12">
+                    <div class="slot-card">
+                        <div class="wb-section-title">遷移テーブル</div>
+                        @if (_selectedModel.Transitions.Count == 0)
+                        {
+                            <div class="text-muted small py-2">
+                                この <code>LifecycleState</code> を対象とした <code>TRANSITION</code> 要求はまだありません。
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover align-middle mb-0">
+                                    <thead>
+                                        <tr class="small text-muted">
+                                            <th>From</th>
+                                            <th>Trigger</th>
+                                            <th>To</th>
+                                            <th>要求 (クリックで Workbench へ移動)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var t in _selectedModel.Transitions)
+                                        {
+                                            var fromState = _selectedModel.States.FirstOrDefault(s => s.Value == t.FromValue);
+                                            var toState = _selectedModel.States.FirstOrDefault(s => s.Value == t.ToValue);
+                                            var triggerText = _useJapaneseLabels
+                                                ? (t.TriggerDisplayName ?? t.TriggerCanonicalName ?? "-")
+                                                : (t.TriggerCanonicalName ?? "-");
+
+                                            <tr>
+                                                <td class="small">
+                                                    @if (_useJapaneseLabels && fromState is not null && fromState.Label != fromState.Value)
+                                                    {
+                                                        <span>@fromState.Label</span> <code class="text-muted">(@t.FromValue)</code>
+                                                    }
+                                                    else
+                                                    {
+                                                        <code>@t.FromValue</code>
+                                                    }
+                                                </td>
+                                                <td class="small">
+                                                    @triggerText
+                                                    @if (!string.IsNullOrWhiteSpace(t.ActorDisplayName))
+                                                    {
+                                                        <span class="text-muted ms-1">(@t.ActorDisplayName)</span>
+                                                    }
+                                                </td>
+                                                <td class="small">
+                                                    @if (_useJapaneseLabels && toState is not null && toState.Label != toState.Value)
+                                                    {
+                                                        <span>@toState.Label</span> <code class="text-muted">(@t.ToValue)</code>
+                                                    }
+                                                    else
+                                                    {
+                                                        <code>@t.ToValue</code>
+                                                    }
+                                                </td>
+                                                <td class="small">
+                                                    <button type="button"
+                                                            class="btn btn-link btn-sm p-0 text-decoration-none"
+                                                            @onclick="() => NavigateToRequirement(t.RequirementId)">
+                                                        <code>[@t.RequirementId]</code> @t.RequirementTitle
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private List<FsmModel> _models = [];
+    private string? _selectedStateTermId;
+    private FsmModel? _selectedModel;
+    private bool _useJapaneseLabels = true;
+    private bool _copied;
+    private string? _lastRenderedMermaid;
+
+    protected override void OnInitialized()
+    {
+        Workspace.OnChange += HandleWorkspaceChanged;
+        RebuildModels();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_selectedModel is null)
+        {
+            return;
+        }
+
+        var mermaidCode = FsmMermaidRenderer.Render(_selectedModel, _useJapaneseLabels);
+        if (firstRender || !string.Equals(_lastRenderedMermaid, mermaidCode, StringComparison.Ordinal))
+        {
+            _lastRenderedMermaid = mermaidCode;
+            await JS.InvokeVoidAsync("reqPipelineV2.renderMermaid", "fsm-mermaid-container", mermaidCode);
+        }
+    }
+
+    private void RebuildModels()
+    {
+        _models = FsmGraphBuilder.Build(Workspace.Document);
+        if (_selectedStateTermId is not null)
+        {
+            _selectedModel = _models.FirstOrDefault(
+                m => string.Equals(m.StateTermId, _selectedStateTermId, StringComparison.Ordinal));
+        }
+
+        if (_selectedModel is null && _models.Count > 0)
+        {
+            _selectedModel = _models[0];
+            _selectedStateTermId = _selectedModel.StateTermId;
+        }
+
+        _lastRenderedMermaid = null;
+    }
+
+    private void HandleWorkspaceChanged()
+    {
+        RebuildModels();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void SelectModel(string stateTermId)
+    {
+        _selectedStateTermId = stateTermId;
+        _selectedModel = _models.FirstOrDefault(
+            m => string.Equals(m.StateTermId, stateTermId, StringComparison.Ordinal));
+        _lastRenderedMermaid = null;
+    }
+
+    private void SetLabelMode(bool useJapanese)
+    {
+        if (_useJapaneseLabels == useJapanese)
+        {
+            return;
+        }
+
+        _useJapaneseLabels = useJapanese;
+        _lastRenderedMermaid = null;
+    }
+
+    private void NavigateToRequirement(string requirementId)
+    {
+        Workspace.SelectRequirement(requirementId);
+        Navigation.NavigateTo("/");
+    }
+
+    private async Task CopyMermaid()
+    {
+        if (_selectedModel is null)
+        {
+            return;
+        }
+
+        var code = FsmMermaidRenderer.Render(_selectedModel, _useJapaneseLabels);
+        await JS.InvokeVoidAsync("reqPipelineV2.copyToClipboard", code);
+        _copied = true;
+        StateHasChanged();
+        await Task.Delay(2000);
+        _copied = false;
+        StateHasChanged();
+    }
+
+    private async Task DownloadMermaid()
+    {
+        if (_selectedModel is null)
+        {
+            return;
+        }
+
+        var code = FsmMermaidRenderer.Render(_selectedModel, _useJapaneseLabels);
+        var fileName = $"{_selectedModel.CanonicalName.ToLowerInvariant()}.mmd";
+        await JS.InvokeVoidAsync("reqPipelineV2.downloadTextFile", fileName, code, "text/plain;charset=utf-8");
+    }
+
+    public void Dispose()
+    {
+        Workspace.OnChange -= HandleWorkspaceChanged;
+    }
+}
