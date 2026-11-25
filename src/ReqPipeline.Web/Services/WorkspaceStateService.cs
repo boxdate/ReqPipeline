@@ -433,6 +433,96 @@ public sealed class WorkspaceStateService
         RefreshLintAndNotify();
     }
 
+    public UserJourney AddJourney()
+    {
+        var nextIndex = 1;
+        while (Document.Journeys.Any(j => j.Id == $"JRN-{nextIndex:000}"))
+        {
+            nextIndex++;
+        }
+
+        var initialStates = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var term in Document.Glossary)
+        {
+            if (term.ConceptType == ConceptType.LifecycleState
+                && term.LogicalType.Kind == LogicalTypeKind.Enum
+                && !string.IsNullOrWhiteSpace(term.Id))
+            {
+                var defaultVal = term.LogicalType.AllowedValues.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+                if (defaultVal is not null)
+                {
+                    initialStates[term.Id] = defaultVal;
+                }
+            }
+        }
+
+        var journey = new UserJourney
+        {
+            Id = $"JRN-{nextIndex:000}",
+            Title = $"新規ジャーニー {nextIndex}",
+            Description = string.Empty,
+            InitialStates = initialStates,
+            Steps = []
+        };
+
+        Document.Journeys.Add(journey);
+        RefreshLintAndNotify();
+        return journey;
+    }
+
+    public void DeleteJourney(string journeyId)
+    {
+        Document.Journeys.RemoveAll(j => string.Equals(j.Id, journeyId, StringComparison.Ordinal));
+        RefreshLintAndNotify();
+    }
+
+    public JourneyStep AddJourneyStep(UserJourney journey)
+    {
+        var nextIndex = 1;
+        while (journey.Steps.Any(s => s.StepId == $"STEP-{nextIndex:000}"))
+        {
+            nextIndex++;
+        }
+
+        var defaultReq = Document.Requirements
+            .FirstOrDefault(r => r.NodeKind == RequirementNodeKind.Atomic && r.Behavior is not null)?.Id
+            ?? string.Empty;
+
+        var step = new JourneyStep
+        {
+            StepId = $"STEP-{nextIndex:000}",
+            UserAction = string.Empty,
+            RequirementRef = defaultReq
+        };
+
+        journey.Steps.Add(step);
+        RefreshLintAndNotify();
+        return step;
+    }
+
+    public void MoveJourneyStep(UserJourney journey, int index, int delta)
+    {
+        var target = index + delta;
+        if (index < 0 || index >= journey.Steps.Count || target < 0 || target >= journey.Steps.Count)
+        {
+            return;
+        }
+
+        (journey.Steps[index], journey.Steps[target]) = (journey.Steps[target], journey.Steps[index]);
+        RefreshLintAndNotify();
+    }
+
+    public void DeleteJourneyStep(UserJourney journey, int index)
+    {
+        if (index < 0 || index >= journey.Steps.Count)
+        {
+            return;
+        }
+
+        journey.Steps.RemoveAt(index);
+        RefreshLintAndNotify();
+    }
+
     private void RefreshLintAndNotify()
     {
         Diagnostics = GraphLinter.Lint(Document);

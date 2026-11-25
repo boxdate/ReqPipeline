@@ -115,6 +115,66 @@
       }
     },
     {
+      "id": "TERM-EVT-005",
+      "canonicalName": "CreateScreenRequested",
+      "displayName": "新規作成画面遷移要求",
+      "conceptType": "Event",
+      "description": "一覧画面から新規作成画面への遷移が要求されたイベント。",
+      "aliases": [],
+      "logicalType": {
+        "kind": "None",
+        "allowedValues": []
+      }
+    },
+    {
+      "id": "TERM-EVT-006",
+      "canonicalName": "CreateCompletedOrCanceled",
+      "displayName": "作成完了またはキャンセル操作",
+      "conceptType": "Event",
+      "description": "新規作成画面で登録完了またはキャンセルが行われたイベント。",
+      "aliases": [],
+      "logicalType": {
+        "kind": "None",
+        "allowedValues": []
+      }
+    },
+    {
+      "id": "TERM-EVT-007",
+      "canonicalName": "EditScreenRequested",
+      "displayName": "編集画面遷移要求",
+      "conceptType": "Event",
+      "description": "詳細画面から編集画面への遷移が要求されたイベント。",
+      "aliases": [],
+      "logicalType": {
+        "kind": "None",
+        "allowedValues": []
+      }
+    },
+    {
+      "id": "TERM-EVT-008",
+      "canonicalName": "EditCompletedOrCanceled",
+      "displayName": "更新保存またはキャンセル操作",
+      "conceptType": "Event",
+      "description": "編集画面で更新保存またはキャンセルが行われたイベント。",
+      "aliases": [],
+      "logicalType": {
+        "kind": "None",
+        "allowedValues": []
+      }
+    },
+    {
+      "id": "TERM-EVT-009",
+      "canonicalName": "BackToListRequested",
+      "displayName": "一覧復帰要求",
+      "conceptType": "Event",
+      "description": "詳細画面から一覧画面へ戻る操作が行われたイベント。",
+      "aliases": [],
+      "logicalType": {
+        "kind": "None",
+        "allowedValues": []
+      }
+    },
+    {
       "id": "TERM-LC-001",
       "canonicalName": "ScreenState",
       "displayName": "画面状態",
@@ -123,11 +183,12 @@
       "aliases": [],
       "logicalType": {
         "kind": "Enum",
-        "allowedValues": ["List", "Detail", "Create"],
+        "allowedValues": ["List", "Create", "Detail", "Edit"],
         "valueLabels": {
           "List": "一覧",
+          "Create": "作成",
           "Detail": "詳細",
-          "Create": "作成"
+          "Edit": "編集"
         }
       }
     },
@@ -222,6 +283,101 @@
       }
     },
     {
+      "id": "REQ-001-4",
+      "title": "新規作成画面への遷移",
+      "nodeKind": "Atomic",
+      "parentRequirementId": "REQ-001",
+      "rationaleRefs": ["RAT-001"],
+      "earsPattern": "EventDriven",
+      "subjectSystemRef": "TERM-SYS-001",
+      "actorRef": "TERM-ACT-001",
+      "triggerEventRef": "TERM-EVT-005",
+      "preconditions": [],
+      "behavior": {
+        "kind": "TRANSITION",
+        "targetTermRef": "TERM-LC-001",
+        "fromValue": "List",
+        "toValue": "Create",
+        "timing": "UNSPECIFIED"
+      }
+    },
+    {
+      "id": "REQ-001-5",
+      "title": "新規作成画面から一覧画面への復帰",
+      "nodeKind": "Atomic",
+      "parentRequirementId": "REQ-001",
+      "rationaleRefs": ["RAT-001"],
+      "earsPattern": "EventDriven",
+      "subjectSystemRef": "TERM-SYS-001",
+      "actorRef": "TERM-ACT-001",
+      "triggerEventRef": "TERM-EVT-006",
+      "preconditions": [],
+      "behavior": {
+        "kind": "TRANSITION",
+        "targetTermRef": "TERM-LC-001",
+        "fromValue": "Create",
+        "toValue": "List",
+        "timing": "UNSPECIFIED"
+      }
+    },
+    {
+      "id": "REQ-001-6",
+      "title": "顧客編集画面への遷移",
+      "nodeKind": "Atomic",
+      "parentRequirementId": "REQ-001",
+      "rationaleRefs": ["RAT-001"],
+      "earsPattern": "EventDriven",
+      "subjectSystemRef": "TERM-SYS-001",
+      "actorRef": "TERM-ACT-001",
+      "triggerEventRef": "TERM-EVT-007",
+      "preconditions": [],
+      "behavior": {
+        "kind": "TRANSITION",
+        "targetTermRef": "TERM-LC-001",
+        "fromValue": "Detail",
+        "toValue": "Edit",
+        "timing": "UNSPECIFIED"
+      }
+    },
+    {
+      "id": "REQ-001-7",
+      "title": "編集画面から詳細画面への復帰",
+      "nodeKind": "Atomic",
+      "parentRequirementId": "REQ-001",
+      "rationaleRefs": ["RAT-001"],
+      "earsPattern": "EventDriven",
+      "subjectSystemRef": "TERM-SYS-001",
+      "actorRef": "TERM-ACT-001",
+      "triggerEventRef": "TERM-EVT-008",
+      "preconditions": [],
+      "behavior": {
+        "kind": "TRANSITION",
+        "targetTermRef": "TERM-LC-001",
+        "fromValue": "Edit",
+        "toValue": "Detail",
+        "timing": "UNSPECIFIED"
+      }
+    },
+    {
+      "id": "REQ-001-8",
+      "title": "詳細画面から一覧画面への復帰",
+      "nodeKind": "Atomic",
+      "parentRequirementId": "REQ-001",
+      "rationaleRefs": ["RAT-001"],
+      "earsPattern": "EventDriven",
+      "subjectSystemRef": "TERM-SYS-001",
+      "actorRef": "TERM-ACT-001",
+      "triggerEventRef": "TERM-EVT-009",
+      "preconditions": [],
+      "behavior": {
+        "kind": "TRANSITION",
+        "targetTermRef": "TERM-LC-001",
+        "fromValue": "Detail",
+        "toValue": "List",
+        "timing": "UNSPECIFIED"
+      }
+    },
+    {
       "id": "REQ-002",
       "title": "管理者以外の利用者による顧客削除の防止",
       "summary": "管理者権限（Admin）を持たない利用者が顧客の削除を試みた場合、顧客管理システムはその削除操作を禁止すること。",
@@ -265,5 +421,79 @@
       }
     }
   ],
-  "escapeRecords": []
+  "escapeRecords": [],
+  "journeys": [
+    {
+      "id": "JRN-001",
+      "title": "新規登録〜詳細確認〜編集〜一覧復帰フロー",
+      "description": "一覧画面から新規顧客を登録し、詳細確認・編集を経て一覧画面へ綺麗に戻る正常系ジャーニー。",
+      "initialStates": {
+        "TERM-LC-001": "List",
+        "TERM-SV-001": "Member"
+      },
+      "steps": [
+        {
+          "stepId": "STEP-001",
+          "userAction": "一覧画面で「新規登録」ボタンを押して作成画面へ移動する",
+          "requirementRef": "REQ-001-4"
+        },
+        {
+          "stepId": "STEP-002",
+          "userAction": "顧客情報を入力して登録ボタンを押し、顧客レコードを作成する",
+          "requirementRef": "REQ-001-1"
+        },
+        {
+          "stepId": "STEP-003",
+          "userAction": "作成完了後に一覧画面へ戻る",
+          "requirementRef": "REQ-001-5"
+        },
+        {
+          "stepId": "STEP-004",
+          "userAction": "一覧画面で登録済み顧客一覧を確認する",
+          "requirementRef": "REQ-001-2"
+        },
+        {
+          "stepId": "STEP-005",
+          "userAction": "一覧から対象の顧客を選択して詳細画面へ遷移する",
+          "requirementRef": "REQ-001-3"
+        },
+        {
+          "stepId": "STEP-006",
+          "userAction": "詳細画面で「編集」ボタンを押して編集画面へ移動する",
+          "requirementRef": "REQ-001-6"
+        },
+        {
+          "stepId": "STEP-007",
+          "userAction": "顧客情報を更新保存して詳細画面へ戻る",
+          "requirementRef": "REQ-001-7"
+        },
+        {
+          "stepId": "STEP-008",
+          "userAction": "詳細画面から「一覧へ戻る」を押して一覧画面へ復帰する",
+          "requirementRef": "REQ-001-8"
+        }
+      ]
+    },
+    {
+      "id": "JRN-002",
+      "title": "管理者以外の削除ブロック確認フロー",
+      "description": "UserRole = Member の状態で詳細画面から顧客削除を試み、禁止ルール（PROHIBIT）が発動することを確認する異常系ジャーニー。",
+      "initialStates": {
+        "TERM-LC-001": "Detail",
+        "TERM-SV-001": "Member"
+      },
+      "steps": [
+        {
+          "stepId": "STEP-001",
+          "userAction": "一般メンバー権限で詳細画面の「削除」ボタンを押して削除を試みる",
+          "requirementRef": "REQ-002-1"
+        },
+        {
+          "stepId": "STEP-002",
+          "userAction": "削除がブロックされた後、一覧画面へ戻る",
+          "requirementRef": "REQ-001-8"
+        }
+      ]
+    }
+  ]
 }
