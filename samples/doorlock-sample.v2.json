@@ -1,0 +1,448 @@
+{
+  "schemaVersion": "2.0",
+  "documentId": "DOC-DOORLOCK-001",
+  "title": "車両ドアロック＆警告制御システム要件仕様",
+  "description": "車載ドアロック制御ECUにおける施錠・解錠遷移、半ドア／走行中インターロック、アンサーバック鳴動および故障コード記録を定義する多ドメイン検証サンプル。",
+  "rationales": [
+    {
+      "id": "RAT-001",
+      "title": "乗員の乗降利便性と施錠状態フィードバック",
+      "description": "運転者のスイッチ操作に応じて確実に施錠・解錠を行い、施錠完了をブザーで分かりやすく通知する。",
+      "stakeholder": "車両商品企画・乗員"
+    },
+    {
+      "id": "RAT-002",
+      "title": "誤動作・走行中誤解錠に対する車両安全性確保",
+      "description": "半ドア状態での誤施錠や走行中の誤解錠をインターロックし、乗員の安全を確保する。",
+      "stakeholder": "車両機能安全担当"
+    },
+    {
+      "id": "RAT-003",
+      "title": "故障診断・保守性の確保",
+      "description": "ドアロック機構の異常検知時に故障コード(DTC)を記録し、整備時の原因特定を容易にする。",
+      "stakeholder": "サービス・保守部門"
+    }
+  ],
+  "glossary": [
+    {
+      "id": "TERM-SYS-001",
+      "canonicalName": "DoorLockECU",
+      "displayName": "ドアロック制御ECU",
+      "conceptType": "System",
+      "description": "車両ドアの施錠・解錠および警告出力を統括する制御ユニット。",
+      "aliases": ["ボディECU", "ドアロックECU"],
+      "logicalType": {
+        "kind": "None",
+        "allowedValues": []
+      }
+    },
+    {
+      "id": "TERM-ACT-001",
+      "canonicalName": "Driver",
+      "displayName": "運転者",
+      "conceptType": "Actor",
+      "description": "車室内またはキーレスで施錠・解錠スイッチを操作する乗員。",
+      "aliases": ["ドライバー"],
+      "logicalType": {
+        "kind": "None",
+        "allowedValues": []
+      }
+    },
+    {
+      "id": "TERM-LC-001",
+      "canonicalName": "DoorLockState",
+      "displayName": "ドアロック状態",
+      "conceptType": "LifecycleState",
+      "description": "車両全ドアの現在の施錠状態。",
+      "aliases": ["ロック状態"],
+      "logicalType": {
+        "kind": "Enum",
+        "allowedValues": ["Unlocked", "Locked"],
+        "valueLabels": {
+          "Unlocked": "解錠",
+          "Locked": "施錠"
+        }
+      }
+    },
+    {
+      "id": "TERM-SV-001",
+      "canonicalName": "DoorAjarState",
+      "displayName": "ドア開閉状態",
+      "conceptType": "StateVariable",
+      "description": "全ドアの開閉状態（全閉か半ドアか）。",
+      "aliases": ["半ドア状態"],
+      "logicalType": {
+        "kind": "Enum",
+        "allowedValues": ["Closed", "Ajar"],
+        "valueLabels": {
+          "Closed": "全閉",
+          "Ajar": "半ドア"
+        }
+      }
+    },
+    {
+      "id": "TERM-SV-002",
+      "canonicalName": "DrivingState",
+      "displayName": "走行状態",
+      "conceptType": "StateVariable",
+      "description": "車速から抽象化された車両の停車・走行状態。",
+      "aliases": ["車両状態"],
+      "abstractionNote": "車速 > 0 km/h を Driving として抽象化",
+      "logicalType": {
+        "kind": "Enum",
+        "allowedValues": ["Parked", "Driving"],
+        "valueLabels": {
+          "Parked": "停車中",
+          "Driving": "走行中"
+        }
+      }
+    },
+    {
+      "id": "TERM-EVT-001",
+      "canonicalName": "LockSwitchPressed",
+      "displayName": "施錠スイッチ押下",
+      "conceptType": "Event",
+      "description": "運転者がドアロックスイッチの施錠側を押下したイベント。",
+      "aliases": [],
+      "logicalType": {
+        "kind": "None",
+        "allowedValues": []
+      }
+    },
+    {
+      "id": "TERM-EVT-002",
+      "canonicalName": "UnlockSwitchPressed",
+      "displayName": "解錠スイッチ押下",
+      "conceptType": "Event",
+      "description": "運転者がドアロックスイッチの解錠側を押下したイベント。",
+      "aliases": [],
+      "logicalType": {
+        "kind": "None",
+        "allowedValues": []
+      }
+    },
+    {
+      "id": "TERM-EVT-003",
+      "canonicalName": "LockCompleted",
+      "displayName": "施錠完了イベント",
+      "conceptType": "Event",
+      "description": "ドアロック状態が施錠へ遷移完了した内部イベント。",
+      "aliases": [],
+      "logicalType": {
+        "kind": "None",
+        "allowedValues": []
+      }
+    },
+    {
+      "id": "TERM-EVT-004",
+      "canonicalName": "LockFaultDetected",
+      "displayName": "ロック異常検知",
+      "conceptType": "Event",
+      "description": "アクチュエータ固着等のロック異常が検知されたイベント。",
+      "aliases": [],
+      "logicalType": {
+        "kind": "None",
+        "allowedValues": []
+      }
+    },
+    {
+      "id": "TERM-OBJ-001",
+      "canonicalName": "AnswerbackBuzzer",
+      "displayName": "アンサーバックブザー",
+      "conceptType": "DomainObject",
+      "description": "施錠完了を車外・車内へ通知するワンショット鳴動ブザー。",
+      "aliases": ["確認ブザー"],
+      "logicalType": {
+        "kind": "None",
+        "allowedValues": []
+      }
+    },
+    {
+      "id": "TERM-OBJ-002",
+      "canonicalName": "DiagnosticTroubleCode",
+      "displayName": "故障コード(DTC)",
+      "conceptType": "DomainObject",
+      "description": "不揮発性メモリへ記録される車載故障診断コード。",
+      "aliases": ["DTC"],
+      "logicalType": {
+        "kind": "None",
+        "allowedValues": []
+      }
+    }
+  ],
+  "behaviorCatalog": [
+    {
+      "behaviorDefId": "BEH-LOCK",
+      "canonicalLabel": "lock",
+      "japaneseLabel": "施錠",
+      "description": "ドアロック状態を遷移元から遷移先へ施錠する。",
+      "effect": "MutateState",
+      "allowedTargetTypes": ["LifecycleState"],
+      "requiresFromValue": true,
+      "requiresToValue": true,
+      "japaneseTemplate": "{target}を{from}から{to}へ施錠すること",
+      "englishTemplate": "lock {target} from {from} to {to}"
+    },
+    {
+      "behaviorDefId": "BEH-UNLOCK",
+      "canonicalLabel": "unlock",
+      "japaneseLabel": "解錠",
+      "description": "ドアロック状態を遷移元から遷移先へ解錠する。",
+      "effect": "MutateState",
+      "allowedTargetTypes": ["LifecycleState"],
+      "requiresFromValue": true,
+      "requiresToValue": true,
+      "japaneseTemplate": "{target}を{from}から{to}へ解錠すること",
+      "englishTemplate": "unlock {target} from {from} to {to}"
+    },
+    {
+      "behaviorDefId": "BEH-CHIME",
+      "canonicalLabel": "chime",
+      "japaneseLabel": "鳴動",
+      "description": "警告・通知用ブザーをワンショット鳴動させる。",
+      "effect": "EmitAction",
+      "allowedTargetTypes": ["DomainObject"],
+      "requiresFromValue": false,
+      "requiresToValue": false,
+      "japaneseTemplate": "{target}を鳴動させること",
+      "englishTemplate": "chime {target}"
+    },
+    {
+      "behaviorDefId": "BEH-RECORD-DTC",
+      "canonicalLabel": "record DTC",
+      "japaneseLabel": "記録",
+      "description": "診断メモリへ故障コード(DTC)を記録する。",
+      "effect": "ManageEntity",
+      "allowedTargetTypes": ["DomainObject"],
+      "requiresFromValue": false,
+      "requiresToValue": false,
+      "japaneseTemplate": "{target}を記録すること",
+      "englishTemplate": "record {target}"
+    },
+    {
+      "behaviorDefId": "BEH-INTERLOCK",
+      "canonicalLabel": "interlock",
+      "japaneseLabel": "インターロック",
+      "description": "安全条件・状態制約に基づき対象への操作をインターロック（禁止）する。",
+      "effect": "Prohibit",
+      "allowedTargetTypes": ["LifecycleState", "DomainObject"],
+      "requiresFromValue": false,
+      "requiresToValue": false,
+      "japaneseTemplate": "{target}の{prohibitedAction}をインターロックすること",
+      "englishTemplate": "interlock {prohibitedAction} on {target}"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "title": "ドアの通常施錠・解錠およびアンサーバック通知",
+      "summary": "全閉状態での施錠、停車中での解錠、および施錠完了時のアンサーバックブザー鳴動を制御する。",
+      "namespace": "vehicle.doorlock.control",
+      "nodeKind": "Composite",
+      "rationaleRefs": ["RAT-001"],
+      "earsPattern": "EventDriven",
+      "subjectSystemRef": "TERM-SYS-001",
+      "actorRef": "TERM-ACT-001",
+      "preconditions": []
+    },
+    {
+      "id": "REQ-001-1",
+      "title": "全閉状態でのドア施錠",
+      "nodeKind": "Atomic",
+      "parentRequirementId": "REQ-001",
+      "rationaleRefs": ["RAT-001"],
+      "earsPattern": "EventDriven",
+      "subjectSystemRef": "TERM-SYS-001",
+      "actorRef": "TERM-ACT-001",
+      "triggerEventRef": "TERM-EVT-001",
+      "preconditions": [
+        {
+          "stateTermRef": "TERM-SV-001",
+          "operator": "EQ",
+          "expectedValues": ["Closed"]
+        }
+      ],
+      "behavior": {
+        "behaviorDefRef": "BEH-LOCK",
+        "targetTermRef": "TERM-LC-001",
+        "fromValue": "Unlocked",
+        "toValue": "Locked",
+        "timing": "IMMEDIATE"
+      }
+    },
+    {
+      "id": "REQ-001-2",
+      "title": "停車中でのドア解錠",
+      "nodeKind": "Atomic",
+      "parentRequirementId": "REQ-001",
+      "rationaleRefs": ["RAT-001"],
+      "earsPattern": "EventDriven",
+      "subjectSystemRef": "TERM-SYS-001",
+      "actorRef": "TERM-ACT-001",
+      "triggerEventRef": "TERM-EVT-002",
+      "preconditions": [
+        {
+          "stateTermRef": "TERM-SV-002",
+          "operator": "EQ",
+          "expectedValues": ["Parked"]
+        }
+      ],
+      "behavior": {
+        "behaviorDefRef": "BEH-UNLOCK",
+        "targetTermRef": "TERM-LC-001",
+        "fromValue": "Locked",
+        "toValue": "Unlocked",
+        "timing": "IMMEDIATE"
+      }
+    },
+    {
+      "id": "REQ-001-3",
+      "title": "施錠完了時のアンサーバック鳴動",
+      "nodeKind": "Atomic",
+      "parentRequirementId": "REQ-001",
+      "rationaleRefs": ["RAT-001"],
+      "earsPattern": "EventDriven",
+      "subjectSystemRef": "TERM-SYS-001",
+      "triggerEventRef": "TERM-EVT-003",
+      "preconditions": [
+        {
+          "stateTermRef": "TERM-LC-001",
+          "operator": "EQ",
+          "expectedValues": ["Locked"]
+        }
+      ],
+      "behavior": {
+        "behaviorDefRef": "BEH-CHIME",
+        "targetTermRef": "TERM-OBJ-001",
+        "timing": "IMMEDIATE"
+      }
+    },
+    {
+      "id": "REQ-002",
+      "title": "半ドア施錠防止および走行中解錠インターロック",
+      "summary": "半ドア中の施錠禁止および走行中の解錠スイッチ操作インターロックにより誤作動を防止する。",
+      "namespace": "vehicle.doorlock.safety",
+      "nodeKind": "Composite",
+      "rationaleRefs": ["RAT-002"],
+      "earsPattern": "UnwantedBehavior",
+      "subjectSystemRef": "TERM-SYS-001",
+      "preconditions": []
+    },
+    {
+      "id": "REQ-002-1",
+      "title": "半ドア状態での施錠インターロック",
+      "nodeKind": "Atomic",
+      "parentRequirementId": "REQ-002",
+      "rationaleRefs": ["RAT-002"],
+      "earsPattern": "StateDriven",
+      "subjectSystemRef": "TERM-SYS-001",
+      "preconditions": [
+        {
+          "stateTermRef": "TERM-SV-001",
+          "operator": "EQ",
+          "expectedValues": ["Ajar"]
+        }
+      ],
+      "behavior": {
+        "behaviorDefRef": "BEH-INTERLOCK",
+        "targetTermRef": "TERM-LC-001",
+        "prohibitedBehaviorDefRef": "BEH-LOCK",
+        "timing": "IMMEDIATE"
+      }
+    },
+    {
+      "id": "REQ-002-2",
+      "title": "走行中の解錠インターロック",
+      "nodeKind": "Atomic",
+      "parentRequirementId": "REQ-002",
+      "rationaleRefs": ["RAT-002"],
+      "earsPattern": "UnwantedBehavior",
+      "subjectSystemRef": "TERM-SYS-001",
+      "actorRef": "TERM-ACT-001",
+      "triggerEventRef": "TERM-EVT-002",
+      "preconditions": [
+        {
+          "stateTermRef": "TERM-SV-002",
+          "operator": "EQ",
+          "expectedValues": ["Driving"]
+        }
+      ],
+      "behavior": {
+        "behaviorDefRef": "BEH-INTERLOCK",
+        "targetTermRef": "TERM-LC-001",
+        "prohibitedBehaviorDefRef": "BEH-UNLOCK",
+        "timing": "IMMEDIATE"
+      }
+    },
+    {
+      "id": "REQ-003",
+      "title": "ドアロック異常時の故障コード記録",
+      "summary": "ロック異常検知イベント発生時に故障コード(DTC)を不揮発メモリへ記録する。",
+      "namespace": "vehicle.doorlock.diagnostics",
+      "nodeKind": "Composite",
+      "rationaleRefs": ["RAT-003"],
+      "earsPattern": "UnwantedBehavior",
+      "subjectSystemRef": "TERM-SYS-001",
+      "triggerEventRef": "TERM-EVT-004",
+      "preconditions": []
+    },
+    {
+      "id": "REQ-003-1",
+      "title": "ロック異常検知時のDTC記録",
+      "nodeKind": "Atomic",
+      "parentRequirementId": "REQ-003",
+      "rationaleRefs": ["RAT-003"],
+      "earsPattern": "UnwantedBehavior",
+      "subjectSystemRef": "TERM-SYS-001",
+      "triggerEventRef": "TERM-EVT-004",
+      "preconditions": [],
+      "behavior": {
+        "behaviorDefRef": "BEH-RECORD-DTC",
+        "targetTermRef": "TERM-OBJ-002",
+        "timing": "IMMEDIATE"
+      }
+    }
+  ],
+  "escapeRecords": [],
+  "journeys": [
+    {
+      "id": "JRN-001",
+      "title": "正常施錠＋アンサーバック鳴動フロー",
+      "description": "ドア全閉・解錠状態から施錠スイッチを押下して施錠し、アンサーバックブザー鳴動まで正常に疎通することを確認する。",
+      "initialStates": {
+        "TERM-LC-001": "Unlocked",
+        "TERM-SV-001": "Closed",
+        "TERM-SV-002": "Parked"
+      },
+      "steps": [
+        {
+          "stepId": "STEP-001",
+          "userAction": "ドア全閉の状態で運転者が施錠スイッチを押下する",
+          "requirementRef": "REQ-001-1"
+        },
+        {
+          "stepId": "STEP-002",
+          "userAction": "施錠完了イベントを受けてアンサーバックブザーが鳴動する",
+          "requirementRef": "REQ-001-3"
+        }
+      ]
+    },
+    {
+      "id": "JRN-002",
+      "title": "走行中解錠インターロック検証フロー",
+      "description": "走行中・施錠状態で解錠スイッチを押下した際、インターロックによりBLOCKEDとなり施錠状態が維持されることを確認する。",
+      "initialStates": {
+        "TERM-LC-001": "Locked",
+        "TERM-SV-001": "Closed",
+        "TERM-SV-002": "Driving"
+      },
+      "steps": [
+        {
+          "stepId": "STEP-001",
+          "userAction": "走行中に運転者が解錠スイッチを押下する",
+          "requirementRef": "REQ-002-2"
+        }
+      ]
+    }
+  ]
+}

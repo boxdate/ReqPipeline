@@ -1,0 +1,538 @@
+@page "/journey"
+@implements IDisposable
+@inject WorkspaceStateService Workspace
+@inject NavigationManager Navigation
+
+<PageTitle>Journey Simulator - ReqPipeline V2</PageTitle>
+
+@{
+    var journeys = Workspace.Document.Journeys;
+    var selectedJourney = GetSelectedJourney();
+    var stateTerms = Workspace.GetGlossaryByTypes(ConceptType.LifecycleState, ConceptType.StateVariable)
+        .Where(t => t.LogicalType.Kind is LogicalTypeKind.Enum or LogicalTypeKind.Boolean)
+        .ToList();
+    var atomicRequirements = Workspace.Document.Requirements
+        .Where(r => r.NodeKind == RequirementNodeKind.Atomic)
+        .ToList();
+    var simulation = selectedJourney is not null
+        ? JourneySimulator.Simulate(Workspace.Document, selectedJourney)
+        : null;
+}
+
+<div class="journey-grid">
+    <!-- ==================== LEFT PANE: JOURNEY LIST & INITIAL STATES ==================== -->
+    <aside class="wb-pane wb-pane-left">
+        <div class="d-flex align-items-center justify-content-between mb-2 gap-1">
+            <div>
+                <div class="wb-section-title mb-0">Customer Journeys</div>
+                <div class="small v2-text-muted">しりとり検証シナリオ一覧 (@journeys.Count 件)</div>
+            </div>
+            <button type="button" class="v2-btn v2-btn-xs v2-btn-primary" @onclick="CreateJourney">
+                <UiIcon Name="plus" Size="12" />
+                <span>ジャーニー追加</span>
+            </button>
+        </div>
+
+        <div class="d-flex flex-column gap-1 mb-3">
+            @if (journeys.Count == 0)
+            {
+                <div class="small v2-text-muted py-2">
+                    ジャーニーがまだありません。「ジャーニー追加」から作成してください。
+                </div>
+            }
+            else
+            {
+                @foreach (var j in journeys)
+                {
+                    var isSelected = selectedJourney is not null
+                        && string.Equals(selectedJourney.Id, j.Id, StringComparison.Ordinal);
+                    var previewSim = JourneySimulator.Simulate(Workspace.Document, j);
+
+                    <div class="tree-node-btn @(isSelected ? "selected" : "")"
+                         role="button"
+                         @onclick="() => SelectJourney(j.Id)">
+                        <div class="text-truncate" style="min-width: 0;">
+                            <div class="fw-semibold small text-truncate v2-text-primary">
+                                <span class="v2-mono-id me-1">@j.Id</span>@j.Title
+                            </div>
+                            <div class="v2-text-muted" style="font-size: 0.72rem;">
+                                @j.Steps.Count ステップ
+                            </div>
+                        </div>
+                        <div class="tree-badges">
+                            @if (previewSim.IsAllPassed)
+                            {
+                                <span class="v2-badge v2-badge-success">OK</span>
+                            }
+                            else
+                            {
+                                <span class="v2-badge v2-badge-danger">@previewSim.FailedStepCount 断絶</span>
+                            }
+                            <button type="button"
+                                    class="v2-btn v2-btn-xs v2-btn-outline-danger p-1"
+                                    title="ジャーニーを削除"
+                                    @onclick:stopPropagation="true"
+                                    @onclick="() => DeleteJourney(j.Id)">
+                                <UiIcon Name="trash" Size="11" />
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        @if (selectedJourney is not null)
+        {
+            <hr class="my-2" />
+
+            <div class="mb-3">
+                <div class="wb-section-title">ジャーニー基本情報</div>
+                <div class="mb-2">
+                    <label class="slot-label">タイトル</label>
+                    <input type="text" class="form-control form-control-sm"
+                           value="@selectedJourney.Title"
+                           @oninput="e => { selectedJourney.Title = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                </div>
+                <div>
+                    <label class="slot-label">説明</label>
+                    <textarea class="form-control form-control-sm v2-prose" rows="2"
+                              placeholder="シナリオの目的や確認観点"
+                              value="@selectedJourney.Description"
+                              @oninput="e => { selectedJourney.Description = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }"></textarea>
+                </div>
+            </div>
+
+            <hr class="my-2" />
+
+            <div>
+                <div class="wb-section-title">初期状態 (InitialStates)</div>
+                <div class="small v2-text-muted mb-2">
+                    チップを切り替えると右ペインの検証結果がリアルタイム更新されます。
+                </div>
+
+                @if (stateTerms.Count == 0)
+                {
+                    <div class="small v2-text-muted">
+                        <code>LifecycleState</code> または <code>StateVariable</code> (Boolean/Enum) の語彙がありません。
+                    </div>
+                }
+                else
+                {
+                    @foreach (var term in stateTerms)
+                    {
+                        var allowedValues = Workspace.GetAllowedValues(term.Id);
+                        var hasExplicit = selectedJourney.InitialStates.TryGetValue(term.Id, out var explicitVal)
+                            && !string.IsNullOrWhiteSpace(explicitVal);
+                        var defaultVal = term.ConceptType == ConceptType.LifecycleState
+                            ? allowedValues.FirstOrDefault()
+                            : null;
+                        var effectiveVal = hasExplicit ? explicitVal : defaultVal;
+
+                        <div class="v2-subcard mb-2" style="background: var(--surface-card);">
+                            <div class="d-flex align-items-center justify-content-between mb-1 gap-1">
+                                <span class="fw-semibold small v2-text-primary">@term.GetDisplayName()</span>
+                                <span class="v2-badge v2-badge-outline">@term.ConceptType</span>
+                            </div>
+                            <div class="v2-mono-id mb-2" style="font-size: 0.72rem;">
+                                @term.CanonicalName (@term.Id)
+                            </div>
+
+                            <div class="chip-group">
+                                @if (term.ConceptType == ConceptType.StateVariable)
+                                {
+                                    <button type="button"
+                                            class="slot-chip @(!hasExplicit ? "active" : "")"
+                                            @onclick="() => ClearInitialState(selectedJourney, term.Id)">
+                                        (未設定)
+                                    </button>
+                                }
+
+                                @foreach (var val in allowedValues)
+                                {
+                                    var isActive = string.Equals(effectiveVal, val, StringComparison.Ordinal);
+                                    <button type="button"
+                                            class="slot-chip slot-chip-value @(isActive ? "active" : "")"
+                                            @onclick="() => SetInitialState(selectedJourney, term.Id, val)">
+                                        @FormatValueChip(term, val)
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        }
+    </aside>
+
+    <!-- ==================== RIGHT PANE: TIMELINE SIMULATOR ==================== -->
+    <section class="wb-pane wb-pane-center">
+        @if (selectedJourney is null || simulation is null)
+        {
+            <div class="v2-card text-center py-5 v2-text-muted">
+                左ペインからジャーニーを選択するか、「ジャーニー追加」で作成してください。
+            </div>
+        }
+        else
+        {
+            <!-- Header Banner: Overall Verdict & Final States -->
+            <div class="v2-card mb-3">
+                <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-2">
+                    <div>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <span class="v2-badge v2-badge-outline font-monospace">@selectedJourney.Id</span>
+                            <h5 class="fw-bold mb-0 v2-text-primary">@selectedJourney.Title</h5>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(selectedJourney.Description))
+                        {
+                            <div class="small v2-text-secondary v2-prose mt-1">@selectedJourney.Description</div>
+                        }
+                    </div>
+
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        @if (simulation.IsAllPassed)
+                        {
+                            <span class="v2-badge v2-badge-success" style="font-size: 0.8rem; padding: 0.3rem 0.7rem;">
+                                <UiIcon Name="check-circle" Size="14" />
+                                <span>All Steps Connected</span>
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="v2-badge v2-badge-danger" style="font-size: 0.8rem; padding: 0.3rem 0.7rem;">
+                                <UiIcon Name="x-circle" Size="14" />
+                                <span>@simulation.FailedStepCount Step(s) Broken</span>
+                            </span>
+                        }
+
+                        @if (simulation.BlockedStepCount > 0)
+                        {
+                            <span class="v2-badge v2-badge-warning" style="font-size: 0.78rem; padding: 0.28rem 0.6rem;">
+                                <UiIcon Name="ban" Size="13" />
+                                <span>Blocked: @simulation.BlockedStepCount</span>
+                            </span>
+                        }
+                    </div>
+                </div>
+
+                <!-- Final States Summary -->
+                <div class="pt-2 mt-2 d-flex align-items-center flex-wrap gap-2" style="border-top: 1px solid var(--border-subtle);">
+                    <span class="small fw-semibold v2-text-muted">最終状態 (FinalStates):</span>
+                    @if (simulation.FinalStates.Count == 0)
+                    {
+                        <span class="small v2-text-muted">なし</span>
+                    }
+                    else
+                    {
+                        @foreach (var kv in simulation.FinalStates)
+                        {
+                            var term = FindTerm(kv.Key);
+                            var termLabel = term is not null ? $"{term.GetDisplayName()} ({term.CanonicalName})" : kv.Key;
+                            var valLabel = term is not null ? FormatValueChip(term, kv.Value) : kv.Value;
+
+                            <span class="journey-baton-pill">
+                                <span class="v2-text-muted">@termLabel:</span>
+                                <span class="v2-text-accent">@valLabel</span>
+                            </span>
+                        }
+                    }
+                </div>
+            </div>
+
+            <!-- Timeline Steps -->
+            @if (selectedJourney.Steps.Count == 0)
+            {
+                <div class="v2-card text-center py-4 v2-text-muted">
+                    まだステップがありません。下の「ステップを追加」からユーザー行動を追加してください。
+                </div>
+            }
+            else
+            {
+                @for (var i = 0; i < selectedJourney.Steps.Count; i++)
+                {
+                    var idx = i;
+                    var step = selectedJourney.Steps[idx];
+                    var stepResult = simulation.Steps[idx];
+                    var matchedReq = atomicRequirements.FirstOrDefault(
+                        r => string.Equals(r.Id, step.RequirementRef, StringComparison.Ordinal));
+
+                    var cardStatusClass = stepResult.Status switch
+                    {
+                        JourneyStepStatus.Passed => "journey-step-passed",
+                        JourneyStepStatus.Blocked => "journey-step-blocked",
+                        _ => "journey-step-failed"
+                    };
+
+                    @if (idx > 0)
+                    {
+                        <div class="journey-arrow" aria-hidden="true">
+                            <UiIcon Name="chevron-down" Size="16" />
+                        </div>
+                    }
+
+                    <div class="journey-step-card @cardStatusClass">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <span class="v2-badge v2-badge-outline">Step @(idx + 1)</span>
+                                <span class="v2-mono-id">@step.StepId</span>
+                                @switch (stepResult.Status)
+                                {
+                                    case JourneyStepStatus.Passed:
+                                        <span class="v2-badge v2-badge-success">
+                                            <UiIcon Name="check-circle" Size="12" />
+                                            <span>PASS</span>
+                                        </span>
+                                        break;
+                                    case JourneyStepStatus.Blocked:
+                                        <span class="v2-badge v2-badge-warning">
+                                            <UiIcon Name="ban" Size="12" />
+                                            <span>BLOCKED</span>
+                                        </span>
+                                        break;
+                                    case JourneyStepStatus.StateMismatch:
+                                        <span class="v2-badge v2-badge-danger">
+                                            <UiIcon Name="x-circle" Size="12" />
+                                            <span>バトン断絶</span>
+                                        </span>
+                                        break;
+                                    case JourneyStepStatus.PreconditionFailed:
+                                        <span class="v2-badge v2-badge-danger">
+                                            <UiIcon Name="x-circle" Size="12" />
+                                            <span>前提不一致</span>
+                                        </span>
+                                        break;
+                                    case JourneyStepStatus.InvalidRequirement:
+                                        <span class="v2-badge v2-badge-danger">
+                                            <UiIcon Name="x-circle" Size="12" />
+                                            <span>要求不正</span>
+                                        </span>
+                                        break;
+                                }
+                            </div>
+
+                            <div class="d-flex align-items-center gap-1">
+                                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline"
+                                        disabled="@(idx == 0)"
+                                        title="上へ移動"
+                                        @onclick="() => Workspace.MoveJourneyStep(selectedJourney, idx, -1)">
+                                    <UiIcon Name="chevron-up" Size="13" />
+                                </button>
+                                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline"
+                                        disabled="@(idx == selectedJourney.Steps.Count - 1)"
+                                        title="下へ移動"
+                                        @onclick="() => Workspace.MoveJourneyStep(selectedJourney, idx, 1)">
+                                    <UiIcon Name="chevron-down" Size="13" />
+                                </button>
+                                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline-danger"
+                                        title="ステップ削除"
+                                        @onclick="() => Workspace.DeleteJourneyStep(selectedJourney, idx)">
+                                    <UiIcon Name="trash" Size="12" />
+                                    <span>削除</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="row g-2 mb-2">
+                            <div class="col-md-6">
+                                <label class="slot-label">ユーザー行動 (UserAction)</label>
+                                <input type="text" class="form-control form-control-sm"
+                                       placeholder="例: 新規登録ボタンを押して作成画面へ移動する"
+                                       value="@step.UserAction"
+                                       @oninput="e => { step.UserAction = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="slot-label">発火する Atomic 要求 (RequirementRef)</label>
+                                <select class="form-select form-select-sm"
+                                        value="@step.RequirementRef"
+                                        @onchange="e => { step.RequirementRef = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }">
+                                    <option value="">-- Atomic 要求を選択 --</option>
+                                    @foreach (var req in atomicRequirements)
+                                    {
+                                        <option value="@req.Id">[@req.Id] @req.Title</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+
+                        @if (matchedReq is not null)
+                        {
+                            <div class="v2-subcard mb-2 small">
+                                <div class="d-flex align-items-center justify-content-between gap-2">
+                                    <span class="fw-semibold v2-text-primary v2-prose">@Workspace.RenderJapanesePreview(matchedReq)</span>
+                                    <button type="button"
+                                            class="v2-btn-link flex-shrink-0"
+                                            @onclick="() => NavigateToRequirement(matchedReq.Id)">
+                                        <span>Workbench で開く</span>
+                                        <UiIcon Name="external-link" Size="12" />
+                                    </button>
+                                </div>
+                                <div class="font-monospace v2-text-muted mt-1" style="font-size: 0.74rem; line-height: 1.55;">
+                                    @Workspace.RenderEnglishPreview(matchedReq)
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Baton & Diagnostic Details -->
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                            <div class="d-flex align-items-center flex-wrap gap-2">
+                                @{
+                                    var batonDisplay = FormatBatonSummary(matchedReq, stepResult);
+                                }
+                                @if (!string.IsNullOrWhiteSpace(batonDisplay))
+                                {
+                                    <span class="journey-baton-pill">@batonDisplay</span>
+                                }
+                            </div>
+
+                            <div class="small @(stepResult.Status is JourneyStepStatus.Passed ? "v2-text-success" : stepResult.Status == JourneyStepStatus.Blocked ? "v2-text-warning fw-semibold" : "v2-text-danger fw-semibold")">
+                                @stepResult.Message
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+
+            <div class="mt-3 mb-4">
+                <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick="() => Workspace.AddJourneyStep(selectedJourney)">
+                    <UiIcon Name="plus" Size="13" />
+                    <span>ステップを追加</span>
+                </button>
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private string? _selectedJourneyId;
+
+    protected override void OnInitialized()
+    {
+        Workspace.OnChange += HandleWorkspaceChanged;
+        if (!string.IsNullOrWhiteSpace(Workspace.SelectedJourneyId))
+        {
+            _selectedJourneyId = Workspace.SelectedJourneyId;
+        }
+        EnsureSelectedJourney();
+    }
+
+    private void HandleWorkspaceChanged()
+    {
+        EnsureSelectedJourney();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void EnsureSelectedJourney()
+    {
+        var journeys = Workspace.Document.Journeys;
+        if (journeys.Count == 0)
+        {
+            _selectedJourneyId = null;
+            return;
+        }
+
+        if (_selectedJourneyId is null
+            || !journeys.Any(j => string.Equals(j.Id, _selectedJourneyId, StringComparison.Ordinal)))
+        {
+            _selectedJourneyId = journeys[0].Id;
+        }
+    }
+
+    private UserJourney? GetSelectedJourney()
+    {
+        EnsureSelectedJourney();
+        return _selectedJourneyId is null
+            ? null
+            : Workspace.Document.Journeys.FirstOrDefault(j => string.Equals(j.Id, _selectedJourneyId, StringComparison.Ordinal));
+    }
+
+    private void SelectJourney(string journeyId)
+    {
+        _selectedJourneyId = journeyId;
+    }
+
+    private void CreateJourney()
+    {
+        var created = Workspace.AddJourney();
+        _selectedJourneyId = created.Id;
+    }
+
+    private void DeleteJourney(string journeyId)
+    {
+        Workspace.DeleteJourney(journeyId);
+        EnsureSelectedJourney();
+    }
+
+    private void SetInitialState(UserJourney journey, string termId, string value)
+    {
+        journey.InitialStates[termId] = value;
+        Workspace.NotifyChanged();
+    }
+
+    private void ClearInitialState(UserJourney journey, string termId)
+    {
+        journey.InitialStates.Remove(termId);
+        Workspace.NotifyChanged();
+    }
+
+    private void NavigateToRequirement(string requirementId)
+    {
+        Workspace.SelectRequirement(requirementId);
+        Navigation.NavigateTo("/");
+    }
+
+    private ApprovedGlossaryTerm? FindTerm(string? termId)
+    {
+        if (string.IsNullOrWhiteSpace(termId))
+        {
+            return null;
+        }
+
+        return Workspace.Document.Glossary.FirstOrDefault(
+            t => string.Equals(t.Id, termId, StringComparison.Ordinal));
+    }
+
+    private static string FormatValueChip(ApprovedGlossaryTerm term, string value)
+    {
+        var label = term.LogicalType.GetValueLabel(value);
+        return string.IsNullOrWhiteSpace(label) || string.Equals(label, value, StringComparison.Ordinal)
+            ? value
+            : $"{label} ({value})";
+    }
+
+    private string FormatBatonSummary(CanonicalRequirementNode? req, JourneyStepResult stepResult)
+    {
+        if (req?.Behavior is null)
+        {
+            return stepResult.TransitionSummary;
+        }
+
+        var behavior = req.Behavior;
+        var behaviorDef = Workspace.FindBehaviorDefinition(behavior.BehaviorDefRef);
+        var targetTerm = FindTerm(behavior.TargetTermRef);
+        if (behaviorDef?.Effect == SemanticEffect.MutateState
+            && !string.IsNullOrWhiteSpace(behavior.FromValue)
+            && !string.IsNullOrWhiteSpace(behavior.ToValue)
+            && targetTerm is not null)
+        {
+            var fromLabel = FormatValueChip(targetTerm, behavior.FromValue);
+            var toLabel = FormatValueChip(targetTerm, behavior.ToValue);
+            if (stepResult.Status == JourneyStepStatus.Passed)
+            {
+                return $"{targetTerm.CanonicalName}: {fromLabel} → {toLabel}";
+            }
+
+            stepResult.StateBefore.TryGetValue(behavior.TargetTermRef, out var actual);
+            var actualLabel = string.IsNullOrWhiteSpace(actual) ? "(unset)" : FormatValueChip(targetTerm, actual);
+            return $"{targetTerm.CanonicalName}: 現在 {actualLabel} ≠ 期待 {fromLabel}";
+        }
+
+        return stepResult.TransitionSummary;
+    }
+
+    private static string? EmptyToNull(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    public void Dispose()
+    {
+        Workspace.OnChange -= HandleWorkspaceChanged;
+    }
+}

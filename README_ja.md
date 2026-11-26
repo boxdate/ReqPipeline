@@ -1,165 +1,144 @@
-# ReqPipeline (USDM AI-Reviewer)
+# ReqPipeline V2.0.0
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
-[![Ollama](https://img.shields.io/badge/Ollama-Local_LLM-black.svg)](https://ollama.ai/)
+[![Blazor](https://img.shields.io/badge/Blazor-Interactive_Server-512BD4.svg)](https://dotnet.microsoft.com/apps/aspnet/web-apps/blazor)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [🇺🇸 Read this in English](README.md)
 [🇯🇵 Read this in Japanese](README_ja.md)
 
+**ReqPipeline V2.0.0** は、**USDM**・**EARS**・**ユーザー定義 Behavior Catalog**・**FSM 解析**・**Journey シミュレーション**・**Test View（テストケース決定論的導出）**を組み合わせた、決定論的な要求仕様ワークベンチ＆静的検証エンジンです。
 
-**ReqPipeline** は、要求仕様の記述手法である **USDM** と **ローカルLLM** を融合させた、次世代の要求仕様エディタ＆静的解析パイプラインです。
-人が見落としがちな仕様の矛盾をAIが意味論的に検証し、開発の超上流工程でバグを検知します。
+自然言語の仕様書で見落とされがちな論理矛盾・前提条件の抜け・到達不能状態や行き止まり状態・シナリオの断絶をコードを1行も書く前に **100%決定論的** に検知し、さらに単一の正本から **Unit / Component (FSM) / E2E** のテスト仕様を自動展開して **Gherkin (`.feature`) / CSV（UTF-8 BOM・RFC 4180） / Markdown** の 3 形式でエクスポートできます。
 
-![ReqPipeline AI検証デモンストレーション](docs/images/demo.gif)
+![ReqPipeline デモンストレーション](docs/images/demo_v2.gif)
 
-## 「誰もが正しく、正しいものを作れるようにする」
+## 背景と解決したい課題
 
-多くの開発現場では、要求定義の段階で「曖昧さ」が残されたまま実装が進み、後からコンテキストの不一致が発覚するという悲劇が起きています。ReqPipelineは、USDM/EARS/BDDという強力なフレームワークと、論理的矛盾を即座に見抜くAIレビューを組み合わせることで、開発の最上流工程で「認識のズレ」というバグを根絶することを目指しています。
+ソフトウェアやシステム開発において、**「要求定義フェーズ」は最もバグが混入しやすく、同時に「除去コストが最も安い」フェーズ**です。従来の自然言語ベースの要求定義では、以下のような問題が起きがちでした。
 
-##  なぜ ReqPipeline を作ったのか？
-
-ソフトウェア開発において、**「要求定義フェーズ」は最もバグが混入しやすく、同時に「バグの除去コストが最も安い」フェーズ**です。
-実装やテスト段階で仕様の矛盾が発覚した場合、その手戻りコストは要求定義段階の10倍〜100倍に膨れ上がります。
-
-しかし、従来の自然言語による要求定義では、以下のような「人間由来のバグ」を防ぐことは困難でした。
 * **コンテキストの不一致**: 書き手と開発者の間にある「暗黙の了解」による認識ズレ。
-* **思考の曖昧さ・考慮漏れ**: 異常系の仕様抜けや、エッジケースの未定義。
-* **論理的矛盾**: システム全体で見たときの、仕様同士のサイレントな競合。
+* **思考の曖昧さ・考慮漏れ**: 異常系・安全インターロック・エッジケースの未定義。
+* **サイレントな論理矛盾**: システム全体で見たときの、仕様同士の静かな競合。
 
-**ReqPipeline は、この「仕様のバグ」をコードを書く前に（Shift-Leftで）駆逐するためのツールです。**
+**ReqPipeline V2** は、要求を自由記述ではなく厳格に型付けされた **知識グラフ（`KnowledgeGraphDocument`, `SchemaVersion = "2.0"`）** として扱うことで、開発の超上流で仕様バグを取り除きます（Shift-Left）。
 
-人間が陥りやすい曖昧さを **USDM / EARS / BDD** という厳格な「型」によって物理的に防ぎ、さらにローカルLLMを用いた **AIパイプライン** が、人間では見落としがちな論理的矛盾を24時間・一瞬で検知します。
-要求定義の段階でバグを取り除くことで、チーム全員が「正しく、正しいものを作る」ことに集中できる世界を実現します。
+1. **Glossary (`ApprovedGlossaryTerm`)**: `System` / `Actor` / `DomainObject` / `Attribute` / `Event` / `StateVariable` / `LifecycleState` の7種と、`Boolean` / `Enum` の閉じた値ドメイン・日本語表示ラベル（`ValueLabels`）・禁止語（`DeprecatedLabels`）を管理します。
+2. **2層振る舞いアーキテクチャ（`SemanticEffect` × `BehaviorCatalog`）**:
+   * **Core 固定の4意味プリミティブ (`SemanticEffect`)**: `MutateState`, `ManageEntity`, `EmitAction`, `Prohibit`。
+   * **ユーザー定義 `BehaviorCatalog` (`BehaviorDefinition`)**: CRUD 動詞に限らず、車載制御等のドメイン固有動詞（例: `BEH-LOCK`, `BEH-UNLOCK`, `BEH-INTERLOCK`）を、許可対象型・必須スロット（`FromValue` / `ToValue`）・日英 EARS テンプレート（`{target}`, `{from}`, `{to}`, `{prohibitedAction}`）付きで自由に定義できます。
+3. **決定論的検証エンジン**:
+   * **`GraphLinter` (`LINT-001` 〜 `LINT-013`)**: 参照整合性、概念型および `AllowedTargetTypes` 一致、値ドメイン閉包、必須スロット整合性・自己禁止防止、前提条件の同時成立性を考慮した要求衝突検知（`LINT-008`: `Prohibit`＋`ProhibitedToValue` との矛盾・`MutateState` 遷移先競合）、FSM 完全性警告（`LINT-012`）、語彙規約・禁止語・未使用語彙検知（`LINT-009`〜`LINT-011`, `LINT-013`）を実行します。
+   * **`FsmGraphBuilder` & `FsmMermaidRenderer`**: `LifecycleState` ごとに状態遷移グラフを構築し、到達不能状態や行き止まり（Dead-end）を自動検出して Mermaid 描画します。
+   * **`JourneySimulator`**: 初期状態（`InitialStates`）から複数ステップを順に評価し、前提条件不一致（`PreconditionFailed`）、遷移元不一致（`StateMismatch`）、禁止ルール発動（`Blocked`）を決定論的に検証します。
+   * **`TestSpecificationGenerator` & 3形式エクスポーター（`Gherkin` / `CSV` / `Markdown`）**: 全要求再評価ロジックを用いた Unit（正常発火・1条件反転・禁止ブロック＆解除対照）、Component（2次元状態遷移マトリクス）、E2E（Journey 通し検証）のテストケースを、ズレない自然キー ID で決定論的に導出します。
+   * **日英 EARS / USDM レンダラ**: 単一の正本 JSON から日本語 EARS・英語 Canonical EARS・階層化 USDM Markdown を自動生成します。
 
-##  はじめに (Getting Started)
+### 全体ワークフロー（`WDD ➔ Glossary ➔ ReqPipeline V2 ➔ Test View`）
 
-ReqPipeline はクロスプラットフォーム（Windows, macOS, Linux）で動作します。
-ローカル環境でAIパイプラインを動かすためのセットアップ手順は以下の通りです。
+ReqPipeline V2.0.0 では、人間のテスト要求分析とツールの決定論的展開の責務を明確に分離しています。
+
+1. **WDD / 上流発散（人間）**: 受け入れ（達成）基準や QA の *What if*、非機能・環境・時相観点を洗い出し、`Rationale → 親要求 (CompositeRequirement)` の観点コンテナとして整理します。
+2. **Glossary & BehaviorCatalog**: 閉じた語彙ドメイン（`Boolean` / `Enum`）、日本語表示ラベル、およびドメイン固有動詞（`SemanticEffect`）を確定します。
+3. **ReqPipeline V2 Workbench（`GraphLinter` / `FSM` / `Journey`）**: `AtomicRequirement` を構造化入力し、矛盾・遷移漏れ・シナリオ断絶を静的に解消します。
+4. **Test View (`/tests`)**: 観点コンテナ・2次元状態遷移マトリクス・E2E ジャーニーから論理空間のテストケースを全件自動展開し、モデル外の `EscapeRecord` を「手動テスト設計要」として明示したうえで **Gherkin / CSV / Markdown** へ出力します。
+
+---
+
+## はじめに (Getting Started)
+
+ReqPipeline V2 は Windows / macOS / Linux で動作します。**V2 Web Workbench およびテストの実行に外部 DB や LLM（Ollama）は不要です。**
 
 ### 1. 前提条件 (Prerequisites)
-実行環境に以下がインストールされていることを確認してください。
+
 * **[.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)**
-* **[Ollama](https://ollama.ai/)** (ローカルLLM実行エンジン)
 
-### 2. LLMモデルの準備
-本システムはデフォルトで `qwen2.5:7b` モデルを使用します。ターミナル（コマンドプロンプト）で以下のコマンドを実行し、モデルをダウンロードしてください。
-*(※初回のみ数GBのダウンロードが発生します)*
-
-```bash
-ollama run qwen2.5:7b
-```
-Note: Ollamaがバックグラウンドで起動している状態にしておいてください。
-
-### 3. インストールと起動 (Installation & Run)
-リポジトリをクローンし、Webプロジェクトを実行します。
+### 2. クローン・テスト・起動
 
 ```bash
 # リポジトリのクローン
 git clone https://github.com/boxdate/ReqPipeline.git
 cd ReqPipeline
+
+# ユニットテストの実行（Core AST / GraphLinter / FSM / Journey / サンプル検証）
+dotnet test
+
+# Blazor Web Workbench の起動
+dotnet run --project src/ReqPipeline.Web
 ```
 
-```bash
-# Webアプリの起動
-cd src/ReqPipeline.Web
-dotnet run
-```
+### 3. ブラウザでアクセス
 
-### 4. ブラウザでアクセス
-起動後、ターミナルに表示されるURL（例: http://localhost:5000 または https://localhost:5001）にブラウザでアクセスしてください。
+起動後、ターミナルに表示される URL（デフォルト: `http://localhost:5087`）にブラウザでアクセスしてください。
 
-##  基本的な使い方 (Basic Usage)
-サンプルデータの読み込み
-プロジェクト直下（実行ディレクトリ）にある requirements.json（要求仕様ツリー）と glossary.json（用語集）が自動的に読み込まれます。
+---
 
-### 要求・理由・仕様の編集
-Web UI上で、USDMのフォーマットに従い「要求（Requirement）」「理由（Rationale）」「仕様（Specification）」を追加・編集します。仕様には EARS コンテキストを設定できます。
+## 基本的な使い方 (Blazor Workbench)
 
-### AI検証の実行
-画面右上の 「AI検証を実行」 ボタンをクリックします。
-バックグラウンドでOrchestratorが動き出し、ローカルLLMが仕様の矛盾や論理的欠陥を分析します。
+画面上部ヘッダーには 7 つのビュー切り替えタブ、リアルタイムの `Errors` / `Warnings` バッジ、**サンプル切替（`CRUD` / `DoorLock`）**、**JSON Import / Export** があります。
 
-### 結果の確認
-矛盾が発見された場合、該当するノードの直下に 「矛盾」 のバッジとAIからの具体的な指摘事項（理由）が表示されます。指摘に従って仕様を修正し、再度検証を回してください。
+1. **Workbench (`/`)**:
+   * 左ペイン: `Rationale → 親要求 (Composite) → 子要求 (Atomic)` の階層ツリー。
+   * 中央ペイン: EARS 5パターン選択、`BehaviorCatalog` からの動的動詞選択、`AllowedTargetTypes` でフィルタされた対象語彙選択、`RequiresFromValue` / `RequiresToValue` に応じた動的スロット、`Prohibit` 時の `ProhibitedBehaviorDefRef` / `ProhibitedToValue` 編集、および構造化できない制約を退避する Escape Hatch。
+   * 右ペイン: 日英 EARS のリアルタイムプレビューと `GraphLinter` 診断結果。
+2. **Glossary (`/glossary`)**:
+   * 承認済み語彙（`ApprovedGlossaryTerm`）、`Boolean` / `Enum` の値ドメイン・`ValueLabels`・`DeprecatedLabels` の編集、Glossary 単体の JSON インポート／エクスポート。
+3. **Behaviors (`/behaviors`)**:
+   * `BehaviorCatalog`（`BehaviorDefinition`）の一覧・追加・編集・削除。`SemanticEffect` 選択時に推奨設定と日英テンプレート雛形を自動補完し、ダミー語彙でのリアルタイムプレビューを確認できます。
+4. **USDM View (`/usdm`)**:
+   * `Rationale → Composite → Atomic` 構成の USDM Markdown（日本語 EARS ＋ 英語 Canonical EARS）を表示・コピーできます。
+5. **FSM View (`/fsm`)**:
+   * `LifecycleState` ごとの Mermaid `stateDiagram-v2` 図と、各状態の到達性・Dead-end・入出力遷移数を可視化します。
+6. **Journey (`/journey`)**:
+   * 初期状態とステップ列を定義し、正常系（`Passed`）および安全インターロック・禁止ルール（`Blocked`）をステップごとにウォークスルー検証できます。
+7. **Test View (`/tests`)**:
+   * 左ペイン: テスト観点コンテナツリー（「すべて表示」、`EscapeRecord` 手動設計要バッジ付き `Rationale → CompositeRequirement`、`FSM 状態遷移マトリクス`［未定義セル数バッジ］、`E2E シナリオ`）。
+   * 右ペイン: 外部ライブラリ不要のインタラクティブ 2 次元状態遷移マトリクス（4分類色分け＆`HasProhibit` 共存バッジ、「未定義セルのみハイライト」トグル、セルクリックでの詳細パネル展開）、共通フィルタバー、および元の `REQ-xxx` / `JRN-xxx` へ直行できる `Workbench で開く →` / `Journey で開く →` リンク。
+   * 上部サマリー＆エクスポートバー: 観点コンテナ数・総ケース数・Atomic 要求カバレッジ率・未定義セル数・Escape 要手動確認数のバッジ、日英表示/出力切替、および 3 形式エクスポート（**Markdown** コピー/DL、**CSV**［UTF-8 BOM・実行列オプション付き］DL、**Gherkin `.feature`**［レベル選択付き］コピー/DL）。
 
-### LLMモデルのカスタマイズ (Customizing the LLM)
+---
 
-本システムは、標準的なPCでも動作するようにデフォルトで軽量な `qwen2.5:7b` を使用していますが、VRAMに余裕がある環境であれば、よりパラメータ数の多いモデル（例: `qwen2.5:14b` や `qwen3.5:9b` など）に変更することで、AIレビューの論理推論精度をさらに向上させることができます。
+## 多ドメインサンプルデータ
 
-モデルの変更は、以下の2つの方法のいずれかで行えます。
+ヘッダーの **`CRUD`** / **`DoorLock`** ボタンから、同一の検証エンジンのまま異なるドメインの仕様をワンクリックで切り替えられます。
 
-#### 方法1: `appsettings.json` を編集する
-`src/ReqPipeline.Web/appsettings.json` ファイルを開き、以下のセクションを追加・編集してください。
-```json
-{
-  "OllamaSettings": {
-    "ModelName": "qwen2.5:14b"
-  }
-}
-```
+| サンプル | ファイル | ドメイン | `BehaviorCatalog` の動詞 | 検証の見どころ |
+| --- | --- | --- | --- | --- |
+| **CRUD** | `samples/crud-sample.v2.json` | 顧客管理 Web アプリ | `BEH-CREATE`, `BEH-DELETE`, `BEH-SET`, `BEH-TRANSITION`, `BEH-DISPLAY`, `BEH-PROHIBIT` | 4画面状態遷移（`List`, `Create`, `Detail`, `Edit`）、管理者以外の削除禁止（`JRN-002` で `Blocked`） |
+| **DoorLock** | `samples/doorlock-sample.v2.json` | 車両ドアロック＆警告制御 ECU | `BEH-LOCK`, `BEH-UNLOCK`, `BEH-CHIME`, `BEH-RECORD-DTC`, `BEH-INTERLOCK`（CRUD動詞不使用） | `Unlocked ⇄ Locked` 循環 FSM、半ドア施錠／走行中解錠インターロック（前提条件を外すと `LINT-008` が即時発火）、`JRN-001` `Passed` / `JRN-002` `Blocked` |
 
-#### 方法2: 環境変数を使用する (CI/CDや一時的な切り替えに便利)
-環境変数 OllamaSettings__ModelName（アンダースコア2つ）を指定して実行することも可能です。
+---
 
-(macOS / Linux の場合)
+## プロジェクト構成
 
-```bash
-export OllamaSettings__ModelName="qwen2.5:14b"
-dotnet run
-```
+* `src/ReqPipeline.Core/`: V2 ドメイン AST（`KnowledgeGraphDocument`, `BehaviorCatalogModels`）、`GraphLinter`、`FsmGraphBuilder`、`JourneySimulator`、`Testing`（`TestSpecificationGenerator`, `GherkinTestExporter`, `CsvTestExporter`, `MarkdownTestExporter`）、各種レンダラ。
+* `src/ReqPipeline.Web/`: Blazor Interactive Server ワークベンチ（`Home`, `GlossaryEditor`, `BehaviorsEditor`, `UsdmView`, `FsmView`, `JourneyView`, `TestView`）。
+* `tests/ReqPipeline.UnitTests/`: `GraphLinter`・`FsmGraphBuilder`・`JourneySimulator`・`TestSpecificationGenerator` ＆ 3形式エクスポーター・両サンプルデータセットの xUnit テスト。
+* `samples/`: V2 サンプル正本 JSON（`crud-sample.v2.json`, `doorlock-sample.v2.json`）。
+* `docs/requirements_dev/`: V2 設計メモおよび実装仕様書。
+* `src/ReqPipeline.Linter/`: V1 の CLI プロトタイプ（任意で Ollama LLM 連携を行う旧 CLI）。
 
-(Windows PowerShell の場合)
-
-```PowerShell
-$env:OllamaSettings__ModelName="qwen2.5:14b"
-dotnet run
-```
+---
 
 ## コントリビューション (Contributing)
 
-ReqPipeline は、「誰もが正しい仕様を書ける世界」を目指すオープンソースプロジェクトです。
-コードの記述だけでなく、様々な形でのコントリビューションを大歓迎しています！
+ReqPipeline は「誰もが曖昧さなく検証可能な仕様を書ける世界」を目指すオープンソースプロジェクトです。
 
 ### 歓迎する貢献の形
-以下のような貢献をお待ちしています。どんな小さなことでも構いません！
 
-### 歓迎する貢献の形
-以下のような貢献をお待ちしています。コードが書けなくても、あなたの「専門知識」が最大の貢献になります！
-
-* **要求工学の知見を活かしたプロンプト改善 (Prompt Engineering with RE Expertise)**
-  * 本ツールの心臓部である `SemanticValidator.cs` などのLLMプロンプトの改善提案。
-  * 「USDMの作法として正しいか」「EARSの構文として論理的か」「エッジケースの考慮漏れはないか」といった、**要求工学（Requirements Engineering）の専門知識**をプロンプトに落とし込み、AIを「熟練の要求アナリスト」に育て上げるPRを熱望しています！要求開発の専門家やQAエンジニアの方々の知見が、そのままツールの賢さに直結します。
-* **バグ報告・ユースケースの提案 (Issues)**
-  * 「実際の現場の仕様書を食わせたら、AIがこんな見落としをした」「UIのここが使いにくい」といった報告や、新しい機能のアイデア。
-* **検証用サンプルデータの提供**
-  * テスト用に使える、現場の「あるある」な矛盾や曖昧さを含ませた `requirements.json` のサンプルケース。
-* **コードのコントリビューション (Pull Requests)**
-  * バグ修正、Blazor UIの改善、C#のアーキテクチャリファクタリングなど。
-
-### 現在、特に助けを求めている領域 (Help Wanted!)
-私たちは将来的に、このツールを「チーム全体でコラボレーションできるインフラ」へと進化させたいと考えています。以下の領域に興味がある・得意なエンジニアを大募集しています！
-
-1. **JSONファイルを活用したチーム開発のベストプラクティス化**
-   * ローカルのJSONファイルをGitを用いて、複数人のチームで要求・仕様を開発するベストプラクティスの開発・実践など。
-2. **Phase 2に向けたDB設計・マルチユーザー対応**
-   * 現在はローカルのJSONファイルベースですが、PostgreSQL等を用いたチーム開発用のバックエンド設計の議論・実装。
-2. **UI/UXの改善 (Blazor)**
-   * USDMのツリー構造をより直感的にドラッグ＆ドロップで編集できるUIの実装など。
-3. **英語ドキュメントの翻訳**
-   * 世界中の要求開発者に届けるための、多言語対応。
+* **他ドメインのサンプルデータ提供**: 制御系・承認ワークフロー・在庫引当・医療/業務システムなど、現場の題材をモデル化した `*.v2.json` サンプル。
+* **静的検証ルール・テストの拡充**: `GraphLinter`・FSM・Journey の新たな検証観点やエッジケーステスト（`tests/ReqPipeline.UnitTests/`）の追加。
+* **UI/UX の改善 (Blazor)**: Workbench・Behaviors 管理・FSM View・Journey Simulator の操作性向上。
+* **バグ報告・ドキュメント整備**: Issue での不具合報告、改善提案、ドキュメント拡充。
 
 ### 開発の始め方
+
 1. このリポジトリを Fork します。
-2. 新しいブランチを作成します (`git checkout -b feature/amazing-feature`)。
-3. 変更をコミットします (`git commit -m 'Add some amazing feature'`)。
-4. ブランチに Push します (`git push origin feature/amazing-feature`)。
-5. Pull Request を作成してください！
+2. 新しいブランチを作成します（`git checkout -b feature/amazing-feature`）。
+3. 変更を行い、`dotnet build` と `dotnet test` がすべてパスすることを確認します。
+4. 変更をコミット・Push し、Pull Request を作成してください！
 
 ## 動作環境について (Tested Environments)
 
-本システムは `.NET 10` および `Ollama` を基盤としているため、設計上は Windows / macOS / Linux のクロスプラットフォームで動作します。
-
-ただし現在、作者のローカル環境（Ubuntu / Linux）でのみ動作確認が完了している状態です。
-**Windows や Mac 環境（特に Apple Silicon 搭載機）で動かしてみた方のフィードバックや、動作報告の Issue を大歓迎しています！**
-「Macでも動いたよ！」「Windowsだとここのパス設定でエラーが出た」など、どんな些細な情報でもプロジェクトの大きな助けになります。
+本システムは `.NET 10` を基盤としており、Windows / macOS / Linux のクロスプラットフォームで動作します（Ubuntu / Linux で動作確認済み）。
+Windows や macOS（Apple Silicon 含む）での動作報告やフィードバックも Issue にて大歓迎です！

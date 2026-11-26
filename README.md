@@ -1,185 +1,143 @@
-# ReqPipeline (USDM AI-Reviewer)
+# ReqPipeline V2.0.0
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
-[![Ollama](https://img.shields.io/badge/Ollama-Local_LLM-black.svg)](https://ollama.ai/)
+[![Blazor](https://img.shields.io/badge/Blazor-Interactive_Server-512BD4.svg)](https://dotnet.microsoft.com/apps/aspnet/web-apps/blazor)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [🇺🇸 Read this in English](README.md)
 [🇯🇵 Read this in Japanese](README_ja.md)
 
+**ReqPipeline V2.0.0** is a deterministic requirements specification workbench, static verification engine, and test case derivation suite combining **USDM**, **EARS**, **User-Defined Behavior Catalogs**, **FSM Analysis**, **Journey Simulation**, and **Test View**.
 
-**ReqPipeline** is a next-generation requirements specification editor and static analysis pipeline that fuses **USDM** (Universal Specification Descriptive Manner) with **Local LLMs**.
+It catches specification contradictions, missing preconditions, unreachable/dead-end states, and broken end-to-end flows **100% deterministically**, and automatically derives **Unit / Component (FSM) / E2E** test specifications exported to **Gherkin (`.feature`), CSV (UTF-8 BOM / RFC 4180), and Markdown** before a single line of implementation code is written.
 
-It semantically verifies logical contradictions in specifications that humans tend to overlook, detecting bugs in the ultra-upstream phase of development.
+![ReqPipeline DEMO](docs/images/demo_v2.gif)
 
-![ReqPipeline DEMO](docs/images/demo.gif)
+## Vision & Motivation
 
-## **Our Vision: "Empowering everyone to build the right thing, right"**
+In software and systems engineering, **requirements definition is both where defects are most easily introduced and where fixing them is cheapest**. Traditional natural-language specs suffer from:
 
-In many development environments, implementation proceeds while "ambiguity" remains in the requirements definition phase, leading to the tragedy of discovering context mismatches later on. ReqPipeline aims to eradicate the bug of "cognitive misalignment" in the earliest stages of development by combining powerful frameworks like USDM/EARS/BDD with an AI review system that instantly detects logical contradictions.
+* **Context Mismatch**: Unspoken assumptions between authors, reviewers, and developers.
+* **Ambiguity & Omission**: Missing abnormal/safety conditions and undefined edge cases.
+* **Silent Contradictions**: Conflicting requirements across different parts of a specification.
 
-## **Motivation & Problem to Solve**
+**ReqPipeline V2** eliminates these specification bugs upstream (Shift-Left) by modeling requirements as a strongly-typed **Knowledge Graph (`SchemaVersion = "2.0"`)** instead of free-form prose:
 
-In software development, the **"Requirements Definition Phase" is where bugs are most easily introduced, yet it is also the phase where the cost of removing them is the lowest**.
+1. **Glossary (`ApprovedGlossaryTerm`)**: Defines `System`, `Actor`, `DomainObject`, `Attribute`, `Event`, `StateVariable`, and `LifecycleState` with closed `Boolean` / `Enum` value domains, Japanese display labels (`ValueLabels`), and banned terminology (`DeprecatedLabels`).
+2. **2-Layer Behavior Architecture (`SemanticEffect` × `BehaviorCatalog`)**:
+   * **4 Core Semantic Primitives (`SemanticEffect`)**: `MutateState`, `ManageEntity`, `EmitAction`, `Prohibit`.
+   * **User-Defined `BehaviorCatalog` (`BehaviorDefinition`)**: Define domain-specific verbs (e.g., CRUD verbs or automotive ECU verbs like `BEH-LOCK`, `BEH-UNLOCK`, `BEH-INTERLOCK`) with allowed target types, required slots (`FromValue` / `ToValue`), and bilingual EARS templates (`{target}`, `{from}`, `{to}`, `{prohibitedAction}`).
+3. **Deterministic Verification Engines**:
+   * **`GraphLinter` (`LINT-001` – `LINT-013`)**: Verifies reference integrity, concept types, logical domain closure, precondition satisfiability & requirement conflicts (`LINT-008`), FSM completeness (`LINT-012`), and glossary hygiene (`LINT-009` – `LINT-011`, `LINT-013`).
+   * **`FsmGraphBuilder` & `FsmMermaidRenderer`**: Builds live state-transition graphs for `LifecycleState` terms and flags unreachable or dead-end states.
+   * **`JourneySimulator`**: Deterministically walks through multi-step user journeys, verifying preconditions, state transitions (`StateMismatch`), and safety interlocks (`Blocked`).
+   * **`TestSpecificationGenerator` & 3-Format Exporters (`Gherkin` / `CSV` / `Markdown`)**: Deterministically derives Unit (1-condition negation & safety interlocks with full-requirement re-evaluation), Component (2D state-transition matrices), and E2E (Journey) test cases with stable natural-key IDs.
+   * **Bilingual EARS / USDM Renderers**: Generates consistent Japanese and English EARS sentences plus hierarchical USDM Markdown from the single JSON source of truth.
 
-If a contradiction in specifications is discovered during the implementation or testing phase, the cost of rework balloons to 10 to 100 times that of the requirements phase.
+### End-to-End Workflow (`WDD ➔ Glossary ➔ ReqPipeline V2 ➔ Test View`)
 
-However, with traditional natural language requirements definition, it has been difficult to prevent "human-derived bugs" such as:
+ReqPipeline V2.0.0 keeps a clean separation of responsibilities between human test analysis and deterministic test case expansion:
 
-* **Context Mismatch**: Cognitive gaps due to "unspoken assumptions" between writers and developers.  
-* **Ambiguity & Omission**: Missing specifications for abnormal systems and undefined edge cases.  
-* **Logical Contradictions**: Silent conflicts between specifications when viewing the system as a whole.
+1. **WDD / Upstream Test Analysis (Human)**: Elicit acceptance criteria, QA *What if* questions, and non-functional/environmental viewpoints into `Rationale → CompositeRequirement` viewpoint containers.
+2. **Glossary & BehaviorCatalog**: Establish closed domain vocabulary (`Boolean` / `Enum`), display labels, and domain verbs (`SemanticEffect`).
+3. **ReqPipeline V2 Workbench (`GraphLinter` / `FSM` / `Journey`)**: Author structured `AtomicRequirement` specs and eliminate contradictions, dead-end states, and broken flows statically.
+4. **Test View (`/tests`)**: Automatically expand viewpoint containers, 2D state-transition matrices, and E2E journeys into deterministic test cases, flag `EscapeRecord` items for manual test design, and export to **Gherkin**, **CSV**, or **Markdown**.
 
-**ReqPipeline is a tool to eradicate these "specification bugs" *before* writing code (Shift-Left).**
+---
 
-It physically prevents the ambiguities humans easily fall into through the strict "typing" of **USDM / EARS / BDD**, and an **AI pipeline** using a local LLM instantly detects logical contradictions that humans might miss, 24/7.
+## Getting Started
 
-By removing bugs at the requirements definition stage, we realize a world where the entire team can focus on "building the right thing, right."
+ReqPipeline V2 runs cross-platform on Windows, macOS, and Linux. **No external database or LLM is required** for the V2 Web Workbench or test suite.
 
-## **Getting Started**
+### 1. Prerequisites
 
-ReqPipeline runs cross-platform (Windows, macOS, Linux).
+* [**.NET 10.0 SDK**](https://dotnet.microsoft.com/download/dotnet/10.0)
 
-The setup procedure to run the AI pipeline in a local environment is as follows:
-
-### **1\. Prerequisites**
-
-Ensure the following are installed in your execution environment:
-
-* [**.NET 10.0 SDK**](https://dotnet.microsoft.com/download/dotnet/10.0)  
-* [**Ollama**](https://ollama.ai/) (Local LLM execution engine)
-
-### **2\. LLM Model Preparation**
-
-This system uses the qwen2.5:7b model by default. Run the following command in your terminal to download the model.
-
-*(Note: A download of several GBs will occur only the first time)*
-
-ollama run qwen2.5:7b
-
-**Note**: Please keep Ollama running in the background.
-
-### **3\. Installation & Run**
-
-Clone the repository and run the web project.
+### 2. Clone, Test, and Run
 
 ```bash
-# Clone the repository  
-git clone \[https://github.com/boxdate/ReqPipeline.git\](https://github.com/boxdate/ReqPipeline.git)  
+# Clone the repository
+git clone https://github.com/boxdate/ReqPipeline.git
 cd ReqPipeline
-```
-```bash
-\# Run the web application  
-cd src/ReqPipeline.Web  
-dotnet run
-```
 
-### **4\. Access via Browser**
+# Run the unit test suite (Core AST, GraphLinter, FSM, Journey, Samples)
+dotnet test
 
-After starting, access the URL displayed in the terminal (e.g., http://localhost:5000 or https://localhost:5001) with your browser.
-
-## **Basic Usage**
-
-### **Loading Sample Data**
-
-The requirements.json (Requirements Specification Tree) and glossary.json (Glossary) located directly under the project (execution directory) are loaded automatically.
-
-### **Editing Requirements, Rationales, and Specifications**
-
-On the Web UI, add and edit "Requirements", "Rationales", and "Specifications" following the USDM format. You can set EARS contexts for the specifications.
-
-### **Executing AI Validation**
-
-Click the **"🔍 Run AI Validation"** button in the upper right corner of the screen.
-
-The Orchestrator starts in the background, and the local LLM analyzes the specifications for contradictions and logical flaws.
-
-### **Checking the Results**
-
-If a contradiction is found, a **"⚠️ Contradiction"** badge and specific feedback (reason) from the AI will be displayed directly below the corresponding node. Correct the specification according to the feedback and run the validation again.
-
-## **Customizing the LLM**
-
-This system uses the lightweight qwen2.5:7b by default so that it can run on standard PCs. However, if you have an environment with ample VRAM, you can further improve the logical reasoning accuracy of the AI review by changing to a model with more parameters (e.g., qwen2.5:14b or qwen3.5:9b).
-
-You can change the model using either of the following two methods:
-
-#### **Method 1: Edit appsettings.json**
-
-Open the src/ReqPipeline.Web/appsettings.json file and add/edit the following section:
-
-```JSON
-{  
-  "OllamaSettings": {  
-    "ModelName": "qwen2.5:14b"  
-  }  
-}
+# Run the Blazor Web Workbench
+dotnet run --project src/ReqPipeline.Web
 ```
 
-#### **Method 2: Use Environment Variables (Useful for CI/CD or temporary switches)**
+### 3. Open in Browser
 
-You can also run it by specifying the environment variable OllamaSettings\_\_ModelName (two underscores).
+Open the URL shown in the terminal (default: `http://localhost:5087`) in your browser.
 
-*(For macOS / Linux)*
-```bash
-export OllamaSettings\_\_ModelName="qwen2.5:14b"  
-dotnet run
-```
+---
 
-*(For Windows PowerShell)*
+## Basic Usage (Blazor Workbench)
 
-```bash
-$env:OllamaSettings\_\_ModelName="qwen2.5:14b"  
-dotnet run
-```
+The Web UI has 7 tabs in the header along with real-time `Errors` / `Warnings` badges, a **Sample Switcher (`CRUD` / `DoorLock`)**, and **JSON Import / Export**:
 
-## **Contributing**
+1. **Workbench (`/`)**:
+   * Left pane: `Rationale → Composite → Atomic` tree hierarchy.
+   * Center pane: Structured EARS 5-pattern & dynamic `BehaviorCatalog` slot editor (`TargetTermRef` filtered by `AllowedTargetTypes`, `FromValue` / `ToValue` slots, `Prohibit` target action & value slots, and Escape Hatch for non-formalizable constraints).
+   * Right pane: Live Japanese & English EARS preview and real-time `GraphLinter` diagnostics.
+2. **Glossary (`/glossary`)**:
+   * Manage `ApprovedGlossaryTerm` entries, `Boolean` / `Enum` domains, `ValueLabels`, `DeprecatedLabels`, and Glossary JSON import/export.
+3. **Behaviors (`/behaviors`)**:
+   * Add, edit, and delete `BehaviorDefinition` entries in `BehaviorCatalog`. Selecting a `SemanticEffect` auto-fills recommended `AllowedTargetTypes`, slot flags, and bilingual templates with a live dummy-vocabulary preview.
+4. **USDM View (`/usdm`)**:
+   * Inspect and copy the generated hierarchical USDM Markdown (`Rationale → Composite → Atomic` with Japanese & Canonical English EARS).
+5. **FSM View (`/fsm`)**:
+   * View live Mermaid `stateDiagram-v2` diagrams and state health (`Initial`, `Reachable`, `Dead-end`, incoming/outgoing counts) for every `LifecycleState`.
+6. **Journey (`/journey`)**:
+   * Create and run deterministic walkthrough scenarios (`InitialStates` + `Steps`) to verify happy paths (`Passed`) and interlock/prohibition rules (`Blocked`).
+7. **Test View (`/tests`)**:
+   * Left pane: Viewpoint container tree (`Show All`, `Rationale → CompositeRequirement` with `EscapeRecord` manual-review badges, `FSM Transition Matrices` with undefined cell counts, and `E2E Scenarios`).
+   * Right pane: Interactive 2D state-transition matrix (`ValidTransition`, `ConditionalTransition`, `ExplicitProhibit`, `UndefinedNoOp`, plus `HasProhibit` coexistence badges, "Highlight Undefined Cells Only" toggle, and click-to-expand cell details) and filtered test case cards with direct `Open in Workbench →` / `Open in Journey →` links.
+   * Top bar: Summary metrics (viewpoints, total cases, Atomic requirement coverage %, undefined cells, Escape manual review count), Japanese/English toggle, and 3-format export (**Markdown** copy/DL, **CSV** UTF-8 BOM DL with optional execution columns, **Gherkin `.feature`** copy/DL with level filter).
 
-ReqPipeline is an open-source project aiming for a world where "everyone can write correct specifications."
+---
 
-We welcome contributions in various forms, not just writing code\!
+## Multi-Domain Sample Datasets
 
-### **Forms of Contribution We Welcome**
+Use the **`CRUD`** / **`DoorLock`** switcher in the header to explore two contrasting domains running on the exact same verification engine:
 
-We look forward to the following contributions. Even if you can't write code, your "expertise" is the greatest contribution\!
+| Sample | File | Domain | Verbs in `BehaviorCatalog` | Highlights |
+| --- | --- | --- | --- | --- |
+| **CRUD** | `samples/crud-sample.v2.json` | Customer Management Web App | `BEH-CREATE`, `BEH-DELETE`, `BEH-SET`, `BEH-TRANSITION`, `BEH-DISPLAY`, `BEH-PROHIBIT` | 4-state screen lifecycle (`List`, `Create`, `Detail`, `Edit`), non-Admin delete prohibition (`JRN-002` `Blocked`) |
+| **DoorLock** | `samples/doorlock-sample.v2.json` | Vehicle Door Lock & Warning ECU | `BEH-LOCK`, `BEH-UNLOCK`, `BEH-CHIME`, `BEH-RECORD-DTC`, `BEH-INTERLOCK` (no CRUD verbs) | Cyclic `Unlocked ⇄ Locked` FSM, half-door lock & driving unlock interlocks (`LINT-008` fires immediately if preconditions are removed), `JRN-001` `Passed` / `JRN-002` `Blocked` |
 
-* **Prompt Engineering with RE Expertise**  
-  * Proposals for improving LLM prompts, such as the core SemanticValidator.cs.  
-  * We are eager for PRs that incorporate **Requirements Engineering (RE) expertise** into prompts—like "Is it correct according to USDM conventions?", "Is the EARS syntax logical?", "Are any edge cases missed?"—to nurture the AI into an "expert requirements analyst"\! The knowledge of requirements development experts and QA engineers directly translates to the tool's intelligence.  
-* **Bug Reports & Use Case Proposals (Issues)**  
-  * Reports like "When I fed it an actual field specification, the AI missed this," or "This part of the UI is hard to use," as well as ideas for new features.  
-* **Providing Sample Data for Validation**  
-  * Sample cases of requirements.json containing typical contradictions or ambiguities found in the field, which can be used for testing.  
-* **Code Contributions (Pull Requests)**  
-  * Bug fixes, Blazor UI improvements, C\# architecture refactoring, etc.
+---
 
-### **Help Wanted\!**
+## Project Structure
 
-In the future, we want to evolve this tool into an "infrastructure for team-wide collaboration." We are actively seeking engineers who are interested in or excel at the following areas\!
+* `src/ReqPipeline.Core/`: V2 Domain AST (`KnowledgeGraphDocument`, `BehaviorCatalogModels`), `GraphLinter`, `FsmGraphBuilder`, `JourneySimulator`, `Testing` (`TestSpecificationGenerator`, `GherkinTestExporter`, `CsvTestExporter`, `MarkdownTestExporter`), and EARS/USDM/Mermaid renderers.
+* `src/ReqPipeline.Web/`: Blazor Interactive Server Workbench (`Home`, `GlossaryEditor`, `BehaviorsEditor`, `UsdmView`, `FsmView`, `JourneyView`, `TestView`).
+* `tests/ReqPipeline.UnitTests/`: xUnit tests covering `GraphLinter`, `FsmGraphBuilder`, `JourneySimulator`, `TestSpecificationGenerator` + 3-format exporters, and both V2 sample datasets.
+* `samples/`: V2 sample knowledge graph documents (`crud-sample.v2.json`, `doorlock-sample.v2.json`).
+* `docs/requirements_dev/`: V2 design notes and implementation specifications.
+* `src/ReqPipeline.Linter/`: Legacy V1 CLI prototype (optional Ollama LLM integration via `OllamaSettings__ModelName`).
 
-1. **Best Practices for Team Development using JSON files**  
-   * Building and practicing best practices for developing requirements/specifications in a multi-person team using Git with local JSON files.  
-2. **DB Design and Multi-User Support for Phase 2**  
-   * Currently based on local JSON files, but we want to discuss and implement a backend design for team development using PostgreSQL, etc.  
-3. **UI/UX Improvements (Blazor)**  
-   * Implementing a UI where the USDM tree structure can be edited more intuitively with drag & drop.  
-4. **Translation of Documents**  
-   * Multilingual support to reach requirements engineers worldwide.
+---
 
-### **How to Start Developing**
+## Contributing
 
-1. Fork this repository.  
-2. Create a new branch (git checkout \-b feature/amazing-feature).  
-3. Commit your changes (git commit \-m 'Add some amazing feature').  
-4. Push to the branch (git push origin feature/amazing-feature).  
-5. Open a Pull Request\!
+ReqPipeline is an open-source project aiming for a world where everyone can write unambiguous, verifiable specifications.
 
-## **Tested Environments**
+### Ways to Contribute
 
-Because this system is based on .NET 10 and Ollama, it is designed to run cross-platform on Windows, macOS, and Linux.
+* **Domain Sample Datasets**: Real-world `*.v2.json` knowledge graphs from embedded control, workflow, inventory, or web domains to stress-test `SemanticEffect` and `GraphLinter`.
+* **Verification & Analysis Rules**: New deterministic checks, FSM/Journey diagnostics, and edge-case tests in `tests/ReqPipeline.UnitTests/`.
+* **UI/UX Improvements (Blazor)**: Enhancements to the Workbench, Behaviors editor, FSM View, and Journey Simulator.
+* **Bug Reports & Documentation**: Issues, reproduction steps, and bilingual documentation improvements.
 
-However, currently, operation has only been verified in the author's local environment (Ubuntu / Linux).
+### How to Start Developing
 
-**We greatly welcome feedback and Issue reports from those who have tried running it on Windows or Mac environments (especially Apple Silicon machines)\!**
+1. Fork this repository.
+2. Create a new branch (`git checkout -b feature/amazing-feature`).
+3. Make your changes and verify `dotnet build` and `dotnet test` pass.
+4. Commit and push your branch, then open a Pull Request.
 
-Any small piece of information, like "It worked on Mac\!" or "I got an error with this path setting on Windows," is a huge help to the project.
+## Tested Environments
+
+Built on .NET 10, ReqPipeline is designed for Windows, macOS, and Linux (verified on Ubuntu / Linux). Feedback and test reports on Windows and macOS (including Apple Silicon) are very welcome via Issues!
