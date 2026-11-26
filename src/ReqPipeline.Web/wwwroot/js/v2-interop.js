@@ -57,7 +57,31 @@ window.reqPipelineV2 = {
                 window.mermaid.initialize({
                     startOnLoad: false,
                     securityLevel: "strict",
-                    theme: "default"
+                    theme: "base",
+                    themeVariables: {
+                        background: "#FAF9F6",
+                        primaryColor: "#FFFFFF",
+                        primaryTextColor: "#1C1917",
+                        primaryBorderColor: "#2563EB",
+                        secondaryColor: "#F3F1EC",
+                        secondaryTextColor: "#1C1917",
+                        secondaryBorderColor: "#D6D3CD",
+                        tertiaryColor: "#EFF6FF",
+                        tertiaryTextColor: "#1D4ED8",
+                        tertiaryBorderColor: "#BFDBFE",
+                        lineColor: "#57534E",
+                        textColor: "#1C1917",
+                        edgeLabelBackground: "#FAF9F6",
+                        labelBackgroundColor: "#FAF9F6",
+                        transitionColor: "#57534E",
+                        transitionLabelColor: "#1C1917",
+                        stateBkg: "#FFFFFF",
+                        stateLabelColor: "#1C1917",
+                        compositeBackground: "#F3F1EC",
+                        specialStateColor: "#1D4ED8",
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", Meiryo, sans-serif',
+                        fontSize: "13px"
+                    }
                 });
                 this._mermaidInitialized = true;
             }

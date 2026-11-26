@@ -8,8 +8,8 @@
 <div class="container-fluid py-3 px-4" style="max-width: 1400px;">
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
         <div>
-            <h4 class="fw-bold mb-0">Glossary 管理 (承認済み語彙)</h4>
-            <div class="text-muted small">Workbench のスロット候補と LINT-001〜LINT-011 の正本語彙を管理します。</div>
+            <h4 class="fw-bold mb-0 v2-text-primary">Glossary 管理 (承認済み語彙)</h4>
+            <div class="v2-text-muted small">Workbench のスロット候補と LINT-001〜LINT-011 の正本語彙を管理します。</div>
         </div>
         <div class="d-flex align-items-center flex-wrap gap-2">
             <select class="form-select form-select-sm" style="width: auto;"
@@ -18,32 +18,40 @@
                 <option value="@GlossaryImportMode.MergeSkipExisting">マージ (同IDスキップ)</option>
                 <option value="@GlossaryImportMode.ReplaceAll">全置換</option>
             </select>
-            <label class="btn btn-outline-secondary btn-sm mb-0" style="cursor: pointer;" title="Glossary JSON をインポート">
-                ⬆ JSON インポート
+            <label class="v2-btn v2-btn-sm v2-btn-outline mb-0" role="button" title="Glossary JSON をインポート">
+                <UiIcon Name="upload" Size="13" />
+                <span>JSON インポート</span>
                 <InputFile OnChange="HandleImportGlossaryJson" accept=".json,application/json" style="display:none" />
             </label>
-            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="HandleExportGlossaryJson" title="現在の Glossary を JSON でエクスポート">
-                ⬇ JSON エクスポート
+            <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" @onclick="HandleExportGlossaryJson" title="現在の Glossary を JSON でエクスポート">
+                <UiIcon Name="download" Size="13" />
+                <span>JSON エクスポート</span>
             </button>
-            <button type="button" class="btn btn-primary btn-sm" @onclick="CreateNewTerm">
-                ＋ 新規語彙を追加
+            <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick="CreateNewTerm">
+                <UiIcon Name="plus" Size="13" />
+                <span>新規語彙を追加</span>
             </button>
         </div>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(_transferMessage))
     {
-        <div class="alert @(_transferIsError ? "alert-danger" : "alert-success") alert-dismissible fade show py-2 px-3 small mb-3" role="alert">
-            @_transferMessage
-            <button type="button" class="btn-close btn-close-sm" style="padding: 0.65rem 0.75rem;"
-                    @onclick="() => _transferMessage = null"></button>
+        <div class="v2-alert @(_transferIsError ? "v2-alert-danger" : "v2-alert-success") justify-content-between align-items-center mb-3" role="alert">
+            <span class="d-inline-flex align-items-center gap-2">
+                <UiIcon Name="@(_transferIsError ? "x-circle" : "check-circle")" Size="15" />
+                <span>@_transferMessage</span>
+            </span>
+            <button type="button" class="v2-btn v2-btn-xs v2-btn-ghost" aria-label="閉じる"
+                    @onclick="() => _transferMessage = null">
+                <UiIcon Name="x" Size="14" />
+            </button>
         </div>
     }
 
     <div class="row g-3">
         <!-- Term List -->
         <div class="col-lg-7">
-            <div class="slot-card">
+            <div class="v2-card">
                 <div class="row g-2 mb-3">
                     <div class="col-md-5">
                         <input type="text" class="form-control form-control-sm" placeholder="ID・名称で検索..."
@@ -68,8 +76,8 @@
                 </div>
 
                 <div class="table-responsive">
-                    <table class="table table-hover table-sm align-middle mb-0">
-                        <thead class="table-light">
+                    <table class="table v2-table table-hover table-sm align-middle mb-0">
+                        <thead>
                             <tr>
                                 <th>ID</th>
                                 <th>表示名 / 英語シンボル</th>
@@ -83,15 +91,15 @@
                             @foreach (var term in FilteredTerms())
                             {
                                 var isSelected = _selectedTermId == term.Id;
-                                <tr class="@(isSelected ? "table-primary" : "")" style="cursor:pointer"
+                                <tr class="@(isSelected ? "v2-row-selected" : "")" style="cursor:pointer"
                                     @onclick="() => SelectTerm(term.Id)">
-                                    <td class="font-monospace small">@term.Id</td>
+                                    <td><span class="v2-mono-id">@term.Id</span></td>
                                     <td>
-                                        <div class="fw-semibold">@term.GetDisplayName()</div>
-                                        <div class="font-monospace small text-muted">@term.CanonicalName</div>
+                                        <div class="fw-semibold v2-text-primary">@term.GetDisplayName()</div>
+                                        <div class="v2-mono-id">@term.CanonicalName</div>
                                     </td>
-                                    <td><span class="chip-badge chip-type">@term.ConceptType</span></td>
-                                    <td class="small">
+                                    <td><span class="v2-badge v2-badge-outline">@term.ConceptType</span></td>
+                                    <td class="small v2-text-secondary">
                                         @if (term.LogicalType.Kind == LogicalTypeKind.Enum)
                                         {
                                             <span>Enum [@string.Join(", ", term.LogicalType.AllowedValues.Select(v => FormatValueWithLabel(term.LogicalType, v)))]</span>
@@ -101,12 +109,14 @@
                                             <span>@term.LogicalType.Kind</span>
                                         }
                                     </td>
-                                    <td class="small text-muted">@(term.Unit ?? "-")</td>
+                                    <td class="small v2-text-muted">@(term.Unit ?? "-")</td>
                                     <td class="text-end">
-                                        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2"
+                                        <button type="button" class="v2-btn v2-btn-xs v2-btn-outline-danger"
+                                                title="語彙を削除"
                                                 @onclick:stopPropagation="true"
                                                 @onclick="() => DeleteTerm(term.Id)">
-                                            削除
+                                            <UiIcon Name="trash" Size="12" />
+                                            <span>削除</span>
                                         </button>
                                     </td>
                                 </tr>
@@ -124,16 +134,16 @@
             }
             @if (editing is null)
             {
-                <div class="slot-card text-center text-muted py-5">
-                    左の一覧から語彙を選択するか、「＋ 新規語彙を追加」をクリックしてください。
+                <div class="v2-card text-center v2-text-muted py-5">
+                    左の一覧から語彙を選択するか、「新規語彙を追加」をクリックしてください。
                 </div>
             }
             else
             {
-                <div class="slot-card">
+                <div class="v2-card">
                     <div class="d-flex align-items-center justify-content-between mb-3">
-                        <span class="fw-bold">語彙の編集</span>
-                        <span class="badge bg-secondary font-monospace">@editing.Id</span>
+                        <span class="fw-bold v2-text-primary">語彙の編集</span>
+                        <span class="v2-badge v2-badge-outline font-monospace">@editing.Id</span>
                     </div>
 
                     <div class="mb-2">
@@ -182,7 +192,7 @@
 
                     <div class="mb-3">
                         <label class="slot-label">説明 (Description)</label>
-                        <textarea class="form-control form-control-sm" rows="2"
+                        <textarea class="form-control form-control-sm v2-prose" rows="2"
                                   value="@editing.Description"
                                   @oninput="e => { editing.Description = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }"></textarea>
                     </div>
@@ -206,7 +216,7 @@
                     @if (editing.LogicalType.Kind == LogicalTypeKind.Boolean)
                     {
                         <div class="mt-2">
-                            <div class="small text-muted mb-2">
+                            <div class="small v2-text-muted mb-2">
                                 許容値: <code>true</code> / <code>false</code>（自動閉包）— 表示ラベル（任意）:
                             </div>
                             <div class="row g-2">
@@ -233,27 +243,32 @@
                     {
                         <div class="mt-3">
                             <label class="slot-label">AllowedValues (英語正規値) ＋ ValueLabels (日本語表示)</label>
-                            <div class="input-group input-group-sm mb-2">
-                                <input type="text" class="form-control font-monospace" placeholder="英語シンボル (例: HighSpeed)"
+                            <div class="d-flex gap-1 mb-2">
+                                <input type="text" class="form-control form-control-sm font-monospace" placeholder="英語シンボル (例: HighSpeed)"
                                        @bind="_newEnumValue"
                                        @onkeydown="e => OnEnumInputKeyDown(e, editing)" />
-                                <input type="text" class="form-control" placeholder="日本語表示 (例: 高速)"
+                                <input type="text" class="form-control form-control-sm" placeholder="日本語表示 (例: 高速)"
                                        @bind="_newEnumLabel"
                                        @onkeydown="e => OnEnumInputKeyDown(e, editing)" />
-                                <button type="button" class="btn btn-outline-primary" @onclick="() => AddEnumValue(editing)">
-                                    追加
+                                <button type="button" class="v2-btn v2-btn-sm v2-btn-outline-primary" @onclick="() => AddEnumValue(editing)">
+                                    <UiIcon Name="plus" Size="12" />
+                                    <span>追加</span>
                                 </button>
                             </div>
                             <div class="d-flex flex-column gap-1">
                                 @foreach (var val in editing.LogicalType.AllowedValues.ToList())
                                 {
-                                    <div class="input-group input-group-sm">
-                                        <span class="input-group-text font-monospace" style="min-width: 110px;">@val</span>
-                                        <input type="text" class="form-control" placeholder="日本語表示ラベル (任意)"
-                                               value="@GetValueLabelInput(editing.LogicalType, val)"
-                                               @oninput="e => SetValueLabel(editing.LogicalType, val, e.Value?.ToString())" />
-                                        <button type="button" class="btn btn-outline-danger"
-                                                @onclick="() => RemoveEnumValue(editing, val)">×</button>
+                                    <div class="d-flex gap-1 align-items-center">
+                                        <div class="input-group input-group-sm flex-grow-1">
+                                            <span class="input-group-text font-monospace" style="min-width: 110px;">@val</span>
+                                            <input type="text" class="form-control" placeholder="日本語表示ラベル (任意)"
+                                                   value="@GetValueLabelInput(editing.LogicalType, val)"
+                                                   @oninput="e => SetValueLabel(editing.LogicalType, val, e.Value?.ToString())" />
+                                        </div>
+                                        <button type="button" class="v2-btn v2-btn-xs v2-btn-outline-danger" title="値を削除"
+                                                @onclick="() => RemoveEnumValue(editing, val)">
+                                            <UiIcon Name="trash" Size="12" />
+                                        </button>
                                     </div>
                                 }
                             </div>
@@ -279,22 +294,25 @@
 
                     <div class="mt-2">
                         <label class="slot-label">禁止語 (DeprecatedLabels)</label>
-                        <div class="input-group input-group-sm mb-2">
-                            <input type="text" class="form-control" placeholder="禁止・非推奨表記を入力 (例: スピード)"
+                        <div class="d-flex gap-1 mb-2">
+                            <input type="text" class="form-control form-control-sm" placeholder="禁止・非推奨表記を入力 (例: スピード)"
                                    @bind="_newDeprecatedLabel"
                                    @onkeydown="e => OnDeprecatedInputKeyDown(e, editing)" />
-                            <button type="button" class="btn btn-outline-danger" @onclick="() => AddDeprecatedLabel(editing)">
-                                追加
+                            <button type="button" class="v2-btn v2-btn-sm v2-btn-outline-danger" @onclick="() => AddDeprecatedLabel(editing)">
+                                <UiIcon Name="plus" Size="12" />
+                                <span>追加</span>
                             </button>
                         </div>
                         <div class="chip-group">
                             @foreach (var label in editing.DeprecatedLabels.ToList())
                             {
-                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle d-inline-flex align-items-center gap-1 px-2 py-1">
-                                    @label
-                                    <button type="button" class="btn-close" style="font-size: 0.55rem;"
+                                <span class="v2-badge v2-badge-danger">
+                                    <span>@label</span>
+                                    <button type="button" class="v2-btn v2-btn-ghost p-0" style="color: inherit;"
                                             aria-label="Remove"
-                                            @onclick="() => RemoveDeprecatedLabel(editing, label)"></button>
+                                            @onclick="() => RemoveDeprecatedLabel(editing, label)">
+                                        <UiIcon Name="x" Size="11" />
+                                    </button>
                                 </span>
                             }
                         </div>

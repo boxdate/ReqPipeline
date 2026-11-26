@@ -35,83 +35,103 @@
 <div class="testview-shell">
     <!-- ==================== TOP SUMMARY & EXPORT BAR ==================== -->
     <div class="testview-topbar">
-        <div class="d-flex align-items-center flex-wrap gap-2">
-            <span class="fw-bold small text-dark me-1">Test View</span>
-            <span class="tv-stat-pill" title="テスト観点コンテナ総数">
-                @(isJa ? "観点コンテナ" : "Viewpoints"): @summary.TotalViewpointContainers
+        <div class="tv-metrics">
+            <span class="tv-metric" title="テスト観点コンテナ総数">
+                <span class="tv-metric-label">@(isJa ? "観点" : "Viewpoints")</span>
+                <span class="tv-metric-value">@summary.TotalViewpointContainers</span>
             </span>
-            <span class="tv-stat-pill tv-stat-info"
+            <span class="tv-metric-sep" aria-hidden="true"></span>
+            <span class="tv-metric"
                   title="Unit: @summary.UnitTestCaseCount / Component: @summary.ComponentTestCaseCount / E2E: @summary.E2ETestCaseCount">
-                @(isJa ? "総ケース数" : "Test Cases"): @summary.TotalTestCases
+                <span class="tv-metric-label">@(isJa ? "ケース" : "Cases")</span>
+                <span class="tv-metric-value">@summary.TotalTestCases</span>
             </span>
-            <span class="tv-stat-pill @(summary.AtomicRequirementCoveragePercent >= 100.0 ? "tv-stat-ok" : "tv-stat-warn")"
+            <span class="tv-metric-sep" aria-hidden="true"></span>
+            <span class="tv-metric"
                   title="@summary.CoveredAtomicRequirements / @summary.TotalNonEscapeAtomicRequirements Atomic Requirements">
-                @(isJa ? "要求カバレッジ" : "Coverage"): @summary.AtomicRequirementCoveragePercent.ToString("0.0")%
+                <span class="tv-metric-label">@(isJa ? "要求カバレッジ" : "Coverage")</span>
+                <span class="tv-metric-value @(summary.AtomicRequirementCoveragePercent >= 100.0 ? "tv-metric-value-ok" : "tv-metric-value-warn")">
+                    @summary.AtomicRequirementCoveragePercent.ToString("0.0")%
+                </span>
             </span>
-            <span class="tv-stat-pill @(summary.TotalUndefinedCells > 0 ? "tv-stat-warn" : "tv-stat-ok")"
-                  title="FSM マトリクス内の未定義 (UndefinedNoOp) セル総数">
-                @(isJa ? "未定義セル" : "Undefined Cells"): @summary.TotalUndefinedCells
+            <span class="tv-metric-sep" aria-hidden="true"></span>
+            <span class="tv-metric" title="FSM マトリクス内の未定義 (UndefinedNoOp) セル総数">
+                <span class="tv-metric-label">@(isJa ? "未定義セル" : "Undefined")</span>
+                <span class="tv-metric-value @(summary.TotalUndefinedCells > 0 ? "tv-metric-value-warn" : "tv-metric-value-ok")">
+                    @summary.TotalUndefinedCells
+                </span>
             </span>
-            <span class="tv-stat-pill @(summary.EscapeManualReviewCount > 0 ? "tv-stat-warn" : "tv-stat-ok")"
-                  title="自動展開不可の EscapeRecord（手動テスト設計要）">
-                @(isJa ? "Escape 要手動確認" : "Escape Manual"): @summary.EscapeManualReviewCount
+            <span class="tv-metric-sep" aria-hidden="true"></span>
+            <span class="tv-metric" title="自動展開不可の EscapeRecord（手動テスト設計要）">
+                <span class="tv-metric-label">@(isJa ? "Escape 手動確認" : "Escape Manual")</span>
+                <span class="tv-metric-value @(summary.EscapeManualReviewCount > 0 ? "tv-metric-value-warn" : "tv-metric-value-ok")">
+                    @summary.EscapeManualReviewCount
+                </span>
             </span>
         </div>
 
         <div class="d-flex align-items-center flex-wrap gap-2">
             @if (!string.IsNullOrWhiteSpace(_exportFeedback))
             {
-                <span class="chip-badge chip-ok">@_exportFeedback</span>
+                <span class="v2-badge v2-badge-success">
+                    <UiIcon Name="check-circle" Size="12" />
+                    <span>@_exportFeedback</span>
+                </span>
             }
 
-            <!-- 言語切替 -->
-            <div class="btn-group btn-group-sm" role="group" aria-label="Export & Display Language">
+            <!-- 言語切替 (JA | EN) -->
+            <div class="v2-segment" role="group" aria-label="Export & Display Language">
                 <button type="button"
-                        class="btn @(isJa ? "btn-primary" : "btn-outline-secondary")"
+                        class="v2-segment-item @(isJa ? "active" : "")"
                         @onclick="() => _language = TestExportLanguage.Japanese">
-                    日本語
+                    JA
                 </button>
                 <button type="button"
-                        class="btn @(!isJa ? "btn-primary" : "btn-outline-secondary")"
+                        class="v2-segment-item @(!isJa ? "active" : "")"
                         @onclick="() => _language = TestExportLanguage.English">
-                    English
+                    EN
                 </button>
             </div>
 
             <!-- Markdown -->
-            <div class="btn-group btn-group-sm" role="group" aria-label="Markdown Export">
-                <button type="button" class="btn btn-outline-secondary" @onclick="CopyMarkdown" title="Markdown をクリップボードへコピー">
-                    MD コピー
+            <div class="tv-export-group" role="group" aria-label="Markdown Export">
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="CopyMarkdown" title="Markdown をクリップボードへコピー">
+                    <UiIcon Name="copy" Size="12" />
+                    <span>MD</span>
                 </button>
-                <button type="button" class="btn btn-outline-primary" @onclick="DownloadMarkdown" title="Markdown (.md) をダウンロード">
-                    .md DL
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="DownloadMarkdown" title="Markdown (.md) をダウンロード">
+                    <UiIcon Name="download" Size="12" />
+                    <span>.md</span>
                 </button>
             </div>
 
             <!-- CSV -->
-            <div class="d-inline-flex align-items-center gap-1 border rounded px-2 py-1 bg-light">
-                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" @onclick="DownloadCsv" title="UTF-8 BOM 付き CSV をダウンロード">
-                    CSV DL
+            <div class="tv-export-group">
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="DownloadCsv" title="UTF-8 BOM 付き CSV をダウンロード">
+                    <UiIcon Name="download" Size="12" />
+                    <span>CSV</span>
                 </button>
-                <label class="form-check-label small d-inline-flex align-items-center gap-1 mb-0" style="cursor: pointer;" title="末尾に Result, Tester, ExecutedAt, Comment の4列を追加">
+                <label class="form-check-label small d-inline-flex align-items-center gap-1 mb-0 v2-text-secondary" style="cursor: pointer; font-size: 0.74rem;" title="末尾に Result, Tester, ExecutedAt, Comment の4列を追加">
                     <input type="checkbox" class="form-check-input mt-0" @bind="_csvIncludeExecutionColumns" />
-                    <span>実行列</span>
+                    <span>@(isJa ? "実行列" : "Exec cols")</span>
                 </label>
             </div>
 
             <!-- Gherkin -->
-            <div class="d-inline-flex align-items-center gap-1 border rounded px-2 py-1 bg-light">
-                <select class="form-select form-select-sm py-0" style="width: auto; font-size: 0.76rem;" @bind="_gherkinLevelFilter" aria-label="Gherkin Level">
-                    <option value="">全階層</option>
+            <div class="tv-export-group">
+                <select class="form-select form-select-sm py-0" style="width: auto; font-size: 0.74rem; height: 24px;" @bind="_gherkinLevelFilter" aria-label="Gherkin Level">
+                    <option value="">@(isJa ? "全階層" : "All")</option>
                     <option value="Unit">Unit</option>
-                    <option value="Component">Component (FSM)</option>
+                    <option value="Component">Component</option>
                     <option value="E2E">E2E</option>
                 </select>
-                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" @onclick="CopyGherkin" title="Gherkin をクリップボードへコピー">
-                    Gherkin コピー
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="CopyGherkin" title="Gherkin をクリップボードへコピー">
+                    <UiIcon Name="copy" Size="12" />
+                    <span>Gherkin</span>
                 </button>
-                <button type="button" class="btn btn-sm btn-primary py-0 px-2" @onclick="DownloadGherkin" title="Gherkin (.feature) をダウンロード">
-                    .feature DL
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="DownloadGherkin" title="Gherkin (.feature) をダウンロード">
+                    <UiIcon Name="file-code" Size="12" />
+                    <span>.feature</span>
                 </button>
             </div>
         </div>
@@ -129,7 +149,7 @@
                         @(isJa ? "すべて表示（全テストケース）" : "Show All Test Cases")
                     </span>
                     <span class="tree-badges">
-                        <span class="chip-badge chip-type">@summary.TotalTestCases</span>
+                        <span class="v2-badge v2-badge-outline">@summary.TotalTestCases</span>
                     </span>
                 </button>
             </div>
@@ -138,7 +158,7 @@
             <div class="wb-section-title">@(isJa ? "要求・達成基準軸 (WDD コンテナ)" : "Requirement Viewpoints")</div>
             @if (reqContainers.Count == 0)
             {
-                <div class="small text-muted mb-3">@(isJa ? "要求コンテナがありません。" : "No requirement containers.")</div>
+                <div class="small v2-text-muted mb-3">@(isJa ? "要求コンテナがありません。" : "No requirement containers.")</div>
             }
             else
             {
@@ -153,7 +173,7 @@
                     var ratTitle = ratGroup.First().RationaleTitle;
 
                     <div class="tree-rationale">
-                        <div class="small fw-bold text-secondary px-2 py-1 bg-light rounded mb-1 text-truncate"
+                        <div class="tree-rationale-header" style="cursor: default;"
                              title="@(string.IsNullOrEmpty(ratId) ? "根拠未設定" : $"[{ratId}] {ratTitle}")">
                             @if (string.IsNullOrEmpty(ratId))
                             {
@@ -161,7 +181,9 @@
                             }
                             else
                             {
-                                <span>[@ratId] @ratTitle</span>
+                                <span class="text-truncate">
+                                    <span class="v2-mono-id me-1">@ratId</span>@ratTitle
+                                </span>
                             }
                         </div>
 
@@ -172,16 +194,17 @@
                                     class="tree-node-btn @(isSelected ? "selected" : "")"
                                     @onclick="() => SelectContainer(comp.Id)">
                                 <span class="tree-node-label" title="[@comp.Id] @comp.Title">
-                                    <code>@comp.Id</code> @(isJa ? comp.Title : comp.TitleEn)
+                                    <span class="v2-mono-id me-1">@comp.Id</span>@(isJa ? comp.Title : comp.TitleEn)
                                 </span>
                                 <span class="tree-badges">
                                     @if (comp.HasEscapeRecords)
                                     {
-                                        <span class="chip-badge chip-warn" title="手動テスト設計が必要な EscapeRecord あり">
-                                            ⚠ 手動設計要
+                                        <span class="v2-badge v2-badge-warning" title="手動テスト設計が必要な EscapeRecord あり">
+                                            <UiIcon Name="alert-triangle" Size="11" />
+                                            <span>@(isJa ? "手動要" : "Manual")</span>
                                         </span>
                                     }
-                                    <span class="chip-badge chip-type">@comp.TestCases.Count</span>
+                                    <span class="v2-badge v2-badge-outline">@comp.TestCases.Count</span>
                                 </span>
                             </button>
                         }
@@ -196,7 +219,7 @@
             <div class="mb-3">
                 @if (fsmContainers.Count == 0)
                 {
-                    <div class="small text-muted">@(isJa ? "LifecycleState がありません。" : "No LifecycleState defined.")</div>
+                    <div class="small v2-text-muted">@(isJa ? "LifecycleState がありません。" : "No LifecycleState defined.")</div>
                 }
                 else
                 {
@@ -212,11 +235,11 @@
                             <span class="tree-badges">
                                 @if (fsm.UndefinedCellCount > 0)
                                 {
-                                    <span class="chip-badge chip-warn" title="未定義セル数">
-                                        未定義 @fsm.UndefinedCellCount
+                                    <span class="v2-badge v2-badge-warning" title="未定義セル数">
+                                        @(isJa ? "未定義" : "Undef") @fsm.UndefinedCellCount
                                     </span>
                                 }
-                                <span class="chip-badge chip-type">@fsm.TestCases.Count</span>
+                                <span class="v2-badge v2-badge-outline">@fsm.TestCases.Count</span>
                             </span>
                         </button>
                     }
@@ -228,7 +251,7 @@
             <div>
                 @if (journeyContainers.Count == 0)
                 {
-                    <div class="small text-muted">@(isJa ? "Journey がありません。" : "No journeys defined.")</div>
+                    <div class="small v2-text-muted">@(isJa ? "Journey がありません。" : "No journeys defined.")</div>
                 }
                 else
                 {
@@ -239,16 +262,16 @@
                                 class="tree-node-btn @(isSelected ? "selected" : "")"
                                 @onclick="() => SelectContainer(jrn.Id)">
                             <span class="tree-node-label" title="[@jrn.Id] @jrn.Title">
-                                <code>@jrn.Id</code> @(isJa ? jrn.Title : jrn.TitleEn)
+                                <span class="v2-mono-id me-1">@jrn.Id</span>@(isJa ? jrn.Title : jrn.TitleEn)
                             </span>
                             <span class="tree-badges">
                                 @if (jrn.HasBlockedSteps)
                                 {
-                                    <span class="chip-badge chip-err">ブロック</span>
+                                    <span class="v2-badge v2-badge-danger">@(isJa ? "ブロック" : "Blocked")</span>
                                 }
                                 else
                                 {
-                                    <span class="chip-badge chip-ok">正常</span>
+                                    <span class="v2-badge v2-badge-success">@(isJa ? "正常" : "Passed")</span>
                                 }
                             </span>
                         </button>
@@ -260,9 +283,9 @@
         <!-- RIGHT PANE: DETAIL & INTERACTIVE 2D MATRIX -->
         <section class="wb-pane wb-pane-center">
             <!-- 共通フィルタバー -->
-            <div class="slot-card py-2 px-3 mb-3">
+            <div class="v2-card py-2 px-3 mb-3">
                 <div class="d-flex align-items-center flex-wrap gap-2">
-                    <span class="small fw-bold text-secondary">@(isJa ? "フィルタ:" : "Filters:")</span>
+                    <span class="small fw-bold v2-text-secondary">@(isJa ? "フィルタ:" : "Filters:")</span>
 
                     <select class="form-select form-select-sm" style="width: auto;" @bind="_filterLevel" aria-label="Test Level Filter">
                         <option value="">@(isJa ? "階層: すべて" : "Level: All")</option>
@@ -288,19 +311,19 @@
                         }
                     </select>
 
-                    <label class="form-check-label small d-inline-flex align-items-center gap-1 ms-1 mb-0" style="cursor: pointer;">
+                    <label class="form-check-label small d-inline-flex align-items-center gap-1 ms-1 mb-0 v2-text-secondary" style="cursor: pointer;">
                         <input type="checkbox" class="form-check-input mt-0" @bind="_showUndefinedNoOpCases" />
                         <span>@(isJa ? "未定義セル（No-op）ケースを表示" : "Show Undefined (No-op) Cases")</span>
                     </label>
 
                     @if (HasActiveFilters())
                     {
-                        <button type="button" class="btn btn-sm btn-link text-decoration-none py-0 px-1" @onclick="ResetFilters">
+                        <button type="button" class="v2-btn-link" @onclick="ResetFilters">
                             @(isJa ? "リセット" : "Reset")
                         </button>
                     }
 
-                    <span class="ms-auto small text-muted">
+                    <span class="ms-auto small v2-text-muted">
                         @(isJa ? $"表示: {filteredCases.Count} / {baseCases.Count} 件" : $"Showing: {filteredCases.Count} / {baseCases.Count}")
                     </span>
                 </div>
@@ -309,14 +332,14 @@
             @if (selectedMatrix is not null)
             {
                 <!-- ==================== FSM 2D INTERACTIVE MATRIX VIEW ==================== -->
-                <div class="slot-card">
+                <div class="v2-card">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                         <div>
-                            <h5 class="fw-bold mb-0">
+                            <h5 class="fw-bold mb-0 v2-text-primary">
                                 @(isJa ? selectedMatrix.LifecycleLabel : selectedMatrix.LifecycleCanonicalLabel)
-                                <code class="small ms-1">@selectedMatrix.LifecycleTermId</code>
+                                <span class="v2-mono-id ms-1">@selectedMatrix.LifecycleTermId</span>
                             </h5>
-                            <div class="small text-muted">
+                            <div class="small v2-text-muted">
                                 @(isJa
                                     ? "セルをクリックすると下部に該当テストケースと根拠要求が展開されます。"
                                     : "Click any cell to inspect derived test cases and source requirements below.")
@@ -324,24 +347,40 @@
                         </div>
 
                         <div class="d-flex align-items-center flex-wrap gap-3">
-                            <label class="form-check-label small d-inline-flex align-items-center gap-1 fw-semibold mb-0" style="cursor: pointer;">
+                            <label class="form-check-label small d-inline-flex align-items-center gap-1 fw-semibold mb-0 v2-text-primary" style="cursor: pointer;">
                                 <input type="checkbox" class="form-check-input mt-0" @bind="_highlightUndefinedOnly" />
                                 <span>@(isJa ? "未定義セルのみハイライト" : "Highlight Undefined Cells Only")</span>
                             </label>
                         </div>
                     </div>
 
-                    <!-- 凡例 -->
-                    <div class="d-flex align-items-center flex-wrap gap-2 mb-3 small">
-                        <span class="badge text-primary border border-primary-subtle bg-primary-subtle">➔ @(isJa ? "有効遷移" : "ValidTransition")</span>
-                        <span class="badge text-info-emphasis border border-info-subtle bg-info-subtle">➔ @(isJa ? "条件付き遷移" : "ConditionalTransition")</span>
-                        <span class="badge text-danger border border-danger-subtle bg-danger-subtle">⛔ @(isJa ? "明示的禁止" : "ExplicitProhibit")</span>
-                        <span class="badge text-secondary border border-secondary-subtle bg-light">— @(isJa ? "未定義 (No-op)" : "UndefinedNoOp")</span>
+                    <!-- CUD × 非色手がかり凡例 -->
+                    <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
+                        <span class="matrix-legend-item matrix-legend-valid">
+                            <UiIcon Name="arrow-right" Size="13" />
+                            <span>@(isJa ? "有効遷移" : "ValidTransition")</span>
+                        </span>
+                        <span class="matrix-legend-item matrix-legend-conditional">
+                            <UiIcon Name="git-branch" Size="13" />
+                            <span>@(isJa ? "条件付き遷移" : "ConditionalTransition")</span>
+                        </span>
+                        <span class="matrix-legend-item matrix-legend-prohibit">
+                            <UiIcon Name="ban" Size="13" />
+                            <span>@(isJa ? "明示的禁止" : "ExplicitProhibit")</span>
+                        </span>
+                        <span class="matrix-legend-item matrix-legend-action">
+                            <UiIcon Name="zap" Size="13" />
+                            <span>@(isJa ? "アクション発火" : "Action")</span>
+                        </span>
+                        <span class="matrix-legend-item matrix-legend-undefined">
+                            <UiIcon Name="minus" Size="13" />
+                            <span>@(isJa ? "未定義 (No-op)" : "UndefinedNoOp")</span>
+                        </span>
                     </div>
 
                     @if (selectedMatrix.Events.Count == 0)
                     {
-                        <div class="small text-muted py-3">
+                        <div class="small v2-text-muted py-3">
                             @(isJa ? "この LifecycleState に関連するイベントがありません。" : "No events related to this LifecycleState.")
                         </div>
                     }
@@ -356,7 +395,7 @@
                                         {
                                             <th>
                                                 <div>@(isJa ? evt.DisplayName : evt.CanonicalName)</div>
-                                                <code class="small fw-normal text-muted">@evt.EventTermId</code>
+                                                <div class="v2-mono-id">@evt.EventTermId</div>
                                             </th>
                                         }
                                     </tr>
@@ -367,8 +406,8 @@
                                         var stateLabel = selectedMatrix.StateLabels.TryGetValue(state, out var lbl) ? lbl : state;
                                         <tr>
                                             <td class="fsm-matrix-sticky-col">
-                                                <div class="fw-semibold">@(isJa ? stateLabel : state)</div>
-                                                <code class="small text-muted">@state</code>
+                                                <div class="fw-semibold v2-text-primary">@(isJa ? stateLabel : state)</div>
+                                                <div class="v2-mono-id">@state</div>
                                             </td>
                                             @foreach (var evt in selectedMatrix.Events)
                                             {
@@ -378,17 +417,19 @@
                                                     {
                                                         var isCellSelected = string.Equals(_selectedCellState, cell.FromState, StringComparison.Ordinal)
                                                             && string.Equals(_selectedCellEventId, cell.EventTermId, StringComparison.Ordinal);
-                                                        var isDimmed = _highlightUndefinedOnly && cell.Classification != MatrixCellKind.UndefinedNoOp;
+                                                        var isUndefined = cell.Classification == MatrixCellKind.UndefinedNoOp;
+                                                        var isDimmed = _highlightUndefinedOnly && !isUndefined;
+                                                        var isHighlightedUndefined = _highlightUndefinedOnly && isUndefined;
 
                                                         <button type="button"
-                                                                class="matrix-cell-btn @GetMatrixCellClass(cell) @(isDimmed ? "matrix-cell-dimmed" : "") @(isCellSelected ? "matrix-cell-selected" : "")"
+                                                                class="matrix-cell-btn @GetMatrixCellClass(cell) @(isDimmed ? "matrix-cell-dimmed" : "") @(isHighlightedUndefined ? "matrix-cell-undefined-highlight" : "") @(isCellSelected ? "matrix-cell-selected" : "")"
                                                                 @onclick="() => SelectMatrixCell(cell.FromState, cell.EventTermId)">
-                                                            <span>@FormatMatrixCellBadge(cell, isJa)</span>
-                                                            <span class="opacity-75" style="font-size: 0.7rem;">
+                                                            @RenderMatrixCellContent(cell, isJa)
+                                                            <span class="matrix-cell-meta">
                                                                 @cell.TestCases.Count @(isJa ? "ケース" : "case(s)")
                                                                 @if (cell.RelatedRequirementIds.Count > 0)
                                                                 {
-                                                                    <span>· @string.Join(", ", cell.RelatedRequirementIds)</span>
+                                                                    <span> · @string.Join(", ", cell.RelatedRequirementIds)</span>
                                                                 }
                                                             </span>
                                                         </button>
@@ -410,39 +451,46 @@
                     if (activeCell is not null)
                     {
                         var cellCases = ApplyFilters(activeCell.TestCases);
-                        <div class="slot-card border-primary">
-                            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                        <div class="v2-card v2-card-focused">
+                            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
                                 <div>
-                                    <div class="wb-section-title mb-0">@(isJa ? "選択セルの詳細" : "Selected Cell Details")</div>
-                                    <h6 class="fw-bold mb-0">
-                                        [@(isJa ? activeCell.FromStateLabel : activeCell.FromState)] × [@(isJa ? activeCell.EventDisplayName : activeCell.EventCanonicalName)]
-                                        <span class="badge bg-secondary ms-1">@activeCell.Classification</span>
+                                    <div class="wb-section-title mb-1">@(isJa ? "選択セルの詳細" : "Selected Cell Details")</div>
+                                    <div class="d-flex align-items-center flex-wrap gap-2">
+                                        <span class="fw-bold v2-text-primary">
+                                            [@(isJa ? activeCell.FromStateLabel : activeCell.FromState)] × [@(isJa ? activeCell.EventDisplayName : activeCell.EventCanonicalName)]
+                                        </span>
+                                        <span class="v2-badge v2-badge-outline">@activeCell.Classification</span>
                                         @if (activeCell.HasProhibit)
                                         {
-                                            <span class="badge bg-danger ms-1">HasProhibit</span>
+                                            <span class="v2-badge v2-badge-danger">
+                                                <UiIcon Name="ban" Size="11" />
+                                                <span>HasProhibit</span>
+                                            </span>
                                         }
-                                    </h6>
+                                    </div>
                                 </div>
                                 <div class="d-flex align-items-center gap-2 flex-wrap">
                                     @foreach (var reqId in activeCell.RelatedRequirementIds)
                                     {
                                         <button type="button"
-                                                class="btn btn-sm btn-outline-primary py-0 px-2"
+                                                class="v2-btn v2-btn-xs v2-btn-outline-primary"
                                                 @onclick="() => OpenInWorkbench(reqId)">
-                                            @reqId を Workbench で開く →
+                                            <span>@reqId を Workbench で開く</span>
+                                            <UiIcon Name="external-link" Size="12" />
                                         </button>
                                     }
                                     <button type="button"
-                                            class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                            class="v2-btn v2-btn-xs v2-btn-outline"
+                                            title="閉じる"
                                             @onclick="ClearSelectedCell">
-                                        ×
+                                        <UiIcon Name="x" Size="13" />
                                     </button>
                                 </div>
                             </div>
 
                             @if (cellCases.Count == 0)
                             {
-                                <div class="small text-muted py-2">
+                                <div class="small v2-text-muted py-2">
                                     @(isJa ? "現在のフィルタ条件に一致するセル内テストケースはありません。" : "No test cases in this cell match the active filters.")
                                 </div>
                             }
@@ -462,31 +510,33 @@
                 <!-- ==================== CONTAINER / ALL CASES VIEW ==================== -->
                 @if (selectedContainer is not null)
                 {
-                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
                         <div>
-                            <h5 class="fw-bold mb-0">
-                                <code>[@selectedContainer.Id]</code> @(isJa ? selectedContainer.Title : selectedContainer.TitleEn)
+                            <h5 class="fw-bold mb-0 v2-text-primary">
+                                <span class="v2-mono-id me-1">@selectedContainer.Id</span>@(isJa ? selectedContainer.Title : selectedContainer.TitleEn)
                             </h5>
                             @if (!string.IsNullOrWhiteSpace(selectedContainer.Description))
                             {
-                                <div class="small text-muted">@selectedContainer.Description</div>
+                                <div class="small v2-text-muted v2-prose">@selectedContainer.Description</div>
                             }
                         </div>
 
                         @if (selectedContainer.Kind == TestViewpointKind.RequirementTree)
                         {
                             <button type="button"
-                                    class="btn btn-sm btn-outline-primary"
+                                    class="v2-btn v2-btn-sm v2-btn-outline-primary"
                                     @onclick="() => OpenInWorkbench(selectedContainer.SourceRef)">
-                                Workbench で開く →
+                                <span>Workbench で開く</span>
+                                <UiIcon Name="external-link" Size="13" />
                             </button>
                         }
                         else if (selectedContainer.Kind == TestViewpointKind.Journey)
                         {
                             <button type="button"
-                                    class="btn btn-sm btn-outline-primary"
+                                    class="v2-btn v2-btn-sm v2-btn-outline-primary"
                                     @onclick="() => OpenInJourney(selectedContainer.SourceRef)">
-                                Journey で開く →
+                                <span>Journey で開く</span>
+                                <UiIcon Name="external-link" Size="13" />
                             </button>
                         }
                     </div>
@@ -494,27 +544,29 @@
                     @if (selectedContainer.HasEscapeRecords)
                     {
                         <div class="escape-box mb-3">
-                            <div class="fw-bold small text-warning-emphasis mb-1">
-                                ⚠ @(isJa ? "手動テスト設計が必要な Escape 要求があります" : "Manual Test Design Required (Escape Records)")
+                            <div class="fw-bold small v2-text-warning d-flex align-items-center gap-1 mb-1">
+                                <UiIcon Name="alert-triangle" Size="14" />
+                                <span>@(isJa ? "手動テスト設計が必要な Escape 要求があります" : "Manual Test Design Required (Escape Records)")</span>
                             </div>
-                            <div class="small text-dark mb-2">
+                            <div class="small v2-text-secondary v2-prose mb-2">
                                 @(isJa
                                     ? "以下の要求は自然言語 EscapeRecord のため自動ケース展開の対象外です。QA による手動テスト設計を行ってください。"
                                     : "The following requirements use free-text EscapeRecords and cannot be auto-derived. Design manual tests.")
                             </div>
                             @foreach (var esc in selectedContainer.EscapeRecords)
                             {
-                                <div class="d-flex align-items-center justify-content-between gap-2 bg-white border rounded p-2 mb-1 small">
-                                    <div>
-                                        <code>@esc.Id</code>
-                                        <span class="badge bg-warning text-dark mx-1">@esc.Reason</span>
-                                        <span class="fw-semibold">[@esc.RequirementId]</span>
-                                        <span>@esc.FreeText</span>
+                                <div class="d-flex align-items-center justify-content-between gap-2 v2-subcard mb-1 small" style="background: var(--surface-card);">
+                                    <div class="d-flex align-items-center flex-wrap gap-2">
+                                        <span class="v2-mono-id">@esc.Id</span>
+                                        <span class="v2-badge v2-badge-warning">@esc.Reason</span>
+                                        <span class="v2-mono-id fw-bold">@esc.RequirementId</span>
+                                        <span class="v2-text-primary">@esc.FreeText</span>
                                     </div>
                                     <button type="button"
-                                            class="btn btn-sm btn-link text-decoration-none p-0 flex-shrink-0"
+                                            class="v2-btn-link flex-shrink-0"
                                             @onclick="() => OpenInWorkbench(esc.RequirementId)">
-                                        Workbench で開く →
+                                        <span>Workbench</span>
+                                        <UiIcon Name="external-link" Size="12" />
                                     </button>
                                 </div>
                             }
@@ -523,19 +575,19 @@
                 }
                 else
                 {
-                    <div class="mb-2">
-                        <h5 class="fw-bold mb-0">@(isJa ? "全テストケース一覧" : "All Derived Test Cases")</h5>
-                        <div class="small text-muted">
+                    <div class="mb-3">
+                        <h5 class="fw-bold mb-0 v2-text-primary">@(isJa ? "全テストケース一覧" : "All Derived Test Cases")</h5>
+                        <div class="small v2-text-muted">
                             @(isJa
-                                ? "Unit ➔ Component (FSM) ➔ E2E の固定順序で全件展開されています。"
-                                : "All test cases deterministically ordered by Unit -> Component (FSM) -> E2E.")
+                                ? "Unit / Component (FSM) / E2E の固定順序で全件展開されています。"
+                                : "All test cases deterministically ordered by Unit, Component (FSM), and E2E.")
                         </div>
                     </div>
                 }
 
                 @if (filteredCases.Count == 0)
                 {
-                    <div class="slot-card text-center py-4 text-muted small">
+                    <div class="v2-card text-center py-4 v2-text-muted small">
                         @(isJa ? "表示対象のテストケースがありません。フィルタ条件を確認してください。" : "No test cases match the current filters.")
                     </div>
                 }
@@ -735,10 +787,57 @@
         }
     }
 
+    private RenderFragment RenderMatrixCellContent(MatrixCell cell, bool isJa) => __builder =>
+    {
+        var targets = isJa ? cell.TargetStateLabels : cell.TargetStates;
+        var hasTargets = targets.Count > 0;
+        var targetLabel = hasTargets ? string.Join(", ", targets) : (isJa ? "アクション" : "Action");
+
+        @switch (cell.Classification)
+        {
+            case MatrixCellKind.ValidTransition:
+                <span class="matrix-cell-line">
+                    <UiIcon Name="@(hasTargets ? "arrow-right" : "zap")" Size="13" />
+                    <span>@targetLabel</span>
+                </span>
+                break;
+
+            case MatrixCellKind.ConditionalTransition:
+                <span class="matrix-cell-line">
+                    <UiIcon Name="@(hasTargets ? "git-branch" : "zap")" Size="13" />
+                    <span>@targetLabel (@(isJa ? "条件あり" : "Cond."))</span>
+                </span>
+                @if (cell.HasProhibit)
+                {
+                    <span class="matrix-cell-line matrix-cell-line-prohibit">
+                        <UiIcon Name="ban" Size="13" />
+                        <span>@(isJa ? "ブロック" : "Blocked")</span>
+                    </span>
+                }
+                break;
+
+            case MatrixCellKind.ExplicitProhibit:
+                <span class="matrix-cell-line">
+                    <UiIcon Name="ban" Size="13" />
+                    <span>@(isJa ? "ブロック" : "Blocked")</span>
+                </span>
+                break;
+
+            case MatrixCellKind.UndefinedNoOp:
+            default:
+                <span class="matrix-cell-line">
+                    <UiIcon Name="minus" Size="13" />
+                    <span>@(isJa ? "未定義" : "Undefined")</span>
+                </span>
+                break;
+        }
+    };
+
     private RenderFragment RenderTestCaseCard(DerivedTestCase tc, bool isJa) => __builder =>
     {
         var cardClass = tc.ExpectedOutcome switch
         {
+            ExpectedTestOutcome.StateChanged => "tc-card tc-card-success",
             ExpectedTestOutcome.Blocked => "tc-card tc-card-blocked",
             ExpectedTestOutcome.NoOp => "tc-card tc-card-noop",
             ExpectedTestOutcome.AlternativeFired => "tc-card tc-card-alt",
@@ -749,41 +848,47 @@
             <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
                 <div>
                     <div class="d-flex align-items-center flex-wrap gap-1 mb-1">
-                        <code class="fw-bold text-dark">@tc.TestCaseId</code>
-                        <span class="badge @GetLevelBadgeClass(tc.TestLevel)">@tc.TestLevel</span>
-                        <span class="badge bg-light text-dark border">@tc.Technique</span>
-                        <span class="badge @GetOutcomeBadgeClass(tc.ExpectedOutcome)">@tc.ExpectedOutcome</span>
+                        <span class="v2-mono-id fw-bold v2-text-primary me-1">@tc.TestCaseId</span>
+                        <span class="v2-badge v2-badge-outline">@tc.TestLevel</span>
+                        <span class="v2-badge v2-badge-outline">@tc.Technique</span>
+                        <span class="v2-badge @GetOutcomeBadgeClass(tc.ExpectedOutcome)">@tc.ExpectedOutcome</span>
                         @if (tc.Tags.Any(t => string.Equals(t, "@safety", StringComparison.Ordinal)))
                         {
-                            <span class="badge bg-danger">@("@safety")</span>
+                            <span class="v2-badge v2-badge-danger">
+                                <UiIcon Name="alert-triangle" Size="11" />
+                                <span>@("@safety")</span>
+                            </span>
                         }
                     </div>
-                    <div class="fw-semibold small">@(isJa ? tc.Title : tc.TitleEn)</div>
+                    <div class="fw-semibold small v2-text-primary">@(isJa ? tc.Title : tc.TitleEn)</div>
                 </div>
 
                 <div class="d-flex align-items-center gap-2 flex-shrink-0">
                     @if (tc.TestLevel == TestLevel.E2E)
                     {
                         <button type="button"
-                                class="btn btn-sm btn-link text-decoration-none p-0"
+                                class="v2-btn-link"
                                 @onclick="() => OpenInJourney(tc.SourceRef)">
-                            Journey で開く →
+                            <span>Journey で開く</span>
+                            <UiIcon Name="external-link" Size="12" />
                         </button>
                     }
                     else if (tc.TestLevel == TestLevel.Unit)
                     {
                         <button type="button"
-                                class="btn btn-sm btn-link text-decoration-none p-0"
+                                class="v2-btn-link"
                                 @onclick="() => OpenInWorkbench(tc.SourceRef)">
-                            Workbench で開く →
+                            <span>Workbench で開く</span>
+                            <UiIcon Name="external-link" Size="12" />
                         </button>
                     }
                     else if (!string.IsNullOrWhiteSpace(tc.CompositeId))
                     {
                         <button type="button"
-                                class="btn btn-sm btn-link text-decoration-none p-0"
+                                class="v2-btn-link"
                                 @onclick="() => OpenInWorkbench(tc.CompositeId)">
-                            Workbench で開く →
+                            <span>Workbench で開く</span>
+                            <UiIcon Name="external-link" Size="12" />
                         </button>
                     }
                 </div>
@@ -794,15 +899,15 @@
                 <div>
                     @if (tc.GivenConditions.Count == 0)
                     {
-                        <span class="text-muted">-</span>
+                        <span class="v2-text-muted">-</span>
                     }
                     else
                     {
                         <div class="d-flex flex-wrap gap-1">
                             @foreach (var cond in tc.GivenConditions)
                             {
-                                <span class="badge bg-light text-dark border fw-normal">
-                                    @(isJa ? cond.LabelJa : cond.LabelEn) = <strong>@(isJa ? cond.ValueLabelJa : cond.ValueLabelEn)</strong>
+                                <span class="v2-badge v2-badge-outline fw-normal" style="border-radius: 4px;">
+                                    @(isJa ? cond.LabelJa : cond.LabelEn) = <strong class="v2-text-primary">@(isJa ? cond.ValueLabelJa : cond.ValueLabelEn)</strong>
                                 </span>
                             }
                         </div>
@@ -810,7 +915,7 @@
                 </div>
 
                 <div class="tc-gwt-label">When</div>
-                <div>
+                <div class="v2-text-primary">
                     @if (tc.WhenSteps.Count == 1)
                     {
                         <span>@(isJa ? tc.WhenSteps[0].ActionTextJa : tc.WhenSteps[0].ActionTextEn)</span>
@@ -827,7 +932,7 @@
                 </div>
 
                 <div class="tc-gwt-label">Then</div>
-                <div class="fw-semibold text-dark" style="white-space: pre-line;">@(isJa ? tc.ThenTextJa : tc.ThenTextEn)</div>
+                <div class="fw-semibold v2-text-primary" style="white-space: pre-line;">@(isJa ? tc.ThenTextJa : tc.ThenTextEn)</div>
             </div>
 
             @{
@@ -835,7 +940,7 @@
             }
             @if (!string.IsNullOrWhiteSpace(note))
             {
-                <div class="mt-2 px-2 py-1 rounded bg-warning-subtle text-warning-emphasis small">
+                <div class="tc-review-note">
                     <strong>ReviewNote:</strong> @note
                 </div>
             }
@@ -844,48 +949,21 @@
 
     private static string GetMatrixCellClass(MatrixCell cell) => cell.Classification switch
     {
-        MatrixCellKind.ValidTransition => "matrix-cell-valid",
+        MatrixCellKind.ValidTransition => cell.TargetStates.Count > 0 ? "matrix-cell-valid" : "matrix-cell-action",
         MatrixCellKind.ConditionalTransition => "matrix-cell-conditional",
         MatrixCellKind.ExplicitProhibit => "matrix-cell-prohibit",
         MatrixCellKind.UndefinedNoOp => "matrix-cell-undefined",
         _ => "matrix-cell-undefined"
     };
 
-    private static string FormatMatrixCellBadge(MatrixCell cell, bool isJa)
-    {
-        var targets = isJa ? cell.TargetStateLabels : cell.TargetStates;
-        var targetText = targets.Count > 0
-            ? $"➔ {string.Join(", ", targets)}"
-            : (isJa ? "⚡ アクション" : "⚡ Action");
-
-        return cell.Classification switch
-        {
-            MatrixCellKind.ValidTransition => targetText,
-            MatrixCellKind.ConditionalTransition => cell.HasProhibit
-                ? (isJa ? $"{targetText} (条件あり) / ⛔ ブロック" : $"{targetText} (Cond.) / ⛔ Blocked")
-                : (isJa ? $"{targetText} (条件あり)" : $"{targetText} (Cond.)"),
-            MatrixCellKind.ExplicitProhibit => isJa ? "⛔ ブロック" : "⛔ Blocked",
-            MatrixCellKind.UndefinedNoOp => isJa ? "— 未定義" : "— Undefined",
-            _ => "-"
-        };
-    }
-
-    private static string GetLevelBadgeClass(TestLevel level) => level switch
-    {
-        TestLevel.Unit => "bg-primary",
-        TestLevel.Component => "bg-info text-dark",
-        TestLevel.E2E => "bg-dark",
-        _ => "bg-secondary"
-    };
-
     private static string GetOutcomeBadgeClass(ExpectedTestOutcome outcome) => outcome switch
     {
-        ExpectedTestOutcome.StateChanged => "bg-success",
-        ExpectedTestOutcome.ActionEmitted => "bg-primary-subtle text-primary",
-        ExpectedTestOutcome.Blocked => "bg-danger",
-        ExpectedTestOutcome.AlternativeFired => "bg-info text-dark",
-        ExpectedTestOutcome.NoOp => "bg-secondary",
-        _ => "bg-secondary"
+        ExpectedTestOutcome.StateChanged => "v2-badge-success",
+        ExpectedTestOutcome.ActionEmitted => "v2-badge-primary",
+        ExpectedTestOutcome.Blocked => "v2-badge-danger",
+        ExpectedTestOutcome.AlternativeFired => "v2-badge-warning",
+        ExpectedTestOutcome.NoOp => "v2-badge-neutral",
+        _ => "v2-badge-neutral"
     };
 
     public void Dispose()

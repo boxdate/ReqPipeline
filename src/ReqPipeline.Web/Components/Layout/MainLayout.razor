@@ -7,9 +7,9 @@
     <header class="v2-header">
         <div class="v2-header-left">
             <div class="v2-brand">
-                <span class="v2-brand-dot"></span>
+                <span class="v2-brand-mark" aria-hidden="true"></span>
                 <span class="v2-brand-title">ReqPipeline</span>
-                <span class="v2-schema-tag">V2 MVP</span>
+                <span class="v2-schema-tag">V2</span>
             </div>
 
             <nav class="v2-nav" aria-label="Primary Navigation">
@@ -17,60 +17,64 @@
                     Workbench
                 </NavLink>
                 <NavLink class="v2-nav-tab" href="glossary">
-                    Glossary (@Workspace.Document.Glossary.Count)
+                    Glossary
                 </NavLink>
                 <NavLink class="v2-nav-tab" href="behaviors">
-                    Behaviors (@Workspace.Document.BehaviorCatalog.Count)
+                    Behaviors
                 </NavLink>
                 <NavLink class="v2-nav-tab" href="usdm">
-                    USDM View
+                    USDM
                 </NavLink>
                 <NavLink class="v2-nav-tab" href="fsm">
-                    FSM View
+                    FSM
                 </NavLink>
                 <NavLink class="v2-nav-tab" href="journey">
                     Journey
                 </NavLink>
                 <NavLink class="v2-nav-tab" href="tests">
-                    Test View
+                    Tests
                 </NavLink>
             </nav>
         </div>
 
         <div class="v2-header-right">
             <div class="v2-lint-summary" title="GraphLinter リアルタイム検証結果">
-                <span class="v2-pill @(Workspace.ErrorCount == 0 ? "v2-pill-ok" : "v2-pill-error")">
-                    Errors: @Workspace.ErrorCount
+                <span class="v2-status-pill @(Workspace.ErrorCount == 0 ? "v2-status-pill-ok" : "v2-status-pill-error")">
+                    <span class="v2-dot @(Workspace.ErrorCount == 0 ? "v2-dot-success" : "v2-dot-danger")"></span>
+                    <span>Errors: @Workspace.ErrorCount</span>
                 </span>
                 @if (Workspace.WarningCount > 0)
                 {
-                    <span class="v2-pill v2-pill-warn">
-                        Warnings: @Workspace.WarningCount
+                    <span class="v2-status-pill v2-status-pill-warn">
+                        <span class="v2-dot v2-dot-warning"></span>
+                        <span>Warnings: @Workspace.WarningCount</span>
                     </span>
                 }
             </div>
 
             <div class="v2-header-actions">
-                <div class="btn-group btn-group-sm" role="group" aria-label="Sample Switcher" title="サンプルデータセットを切替">
+                <div class="v2-segment" role="group" aria-label="Sample Switcher" title="サンプルデータセットを切替">
                     <button type="button"
-                            class="v2-btn @(Workspace.ActiveSampleKey == "crud" ? "v2-btn-primary" : "v2-btn-ghost")"
+                            class="v2-segment-item @(Workspace.ActiveSampleKey == "crud" ? "active" : "")"
                             @onclick='() => SwitchSample("crud", "CRUD")'>
                         CRUD
                     </button>
                     <button type="button"
-                            class="v2-btn @(Workspace.ActiveSampleKey == "doorlock" ? "v2-btn-primary" : "v2-btn-ghost")"
+                            class="v2-segment-item @(Workspace.ActiveSampleKey == "doorlock" ? "active" : "")"
                             @onclick='() => SwitchSample("doorlock", "DoorLock")'>
                         DoorLock
                     </button>
                 </div>
 
-                <label class="v2-btn v2-btn-ghost mb-0" role="button" title="V2 JSONファイルをインポート">
-                    JSON Import
+                <label class="v2-btn v2-btn-sm v2-btn-outline mb-0" role="button" title="V2 JSONファイルをインポート">
+                    <UiIcon Name="upload" Size="14" />
+                    <span>Import</span>
                     <InputFile OnChange="HandleImportJson" accept=".json,application/json" style="display:none" />
                 </label>
 
-                <button type="button" class="v2-btn v2-btn-primary" @onclick="HandleExportJson" title="現在の正本JSONをダウンロード">
-                    JSON Export
+                <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" @onclick="HandleExportJson" title="現在の正本JSONをダウンロード">
+                    <UiIcon Name="download" Size="14" />
+                    <span>Export</span>
                 </button>
             </div>
         </div>
@@ -79,8 +83,13 @@
     @if (!string.IsNullOrWhiteSpace(_statusMessage))
     {
         <div class="v2-banner @(_statusIsError ? "v2-banner-error" : "v2-banner-info")">
-            <span>@_statusMessage</span>
-            <button type="button" class="v2-banner-close" @onclick="() => _statusMessage = null">×</button>
+            <span class="d-inline-flex align-items-center gap-2">
+                <UiIcon Name="@(_statusIsError ? "x-circle" : "check-circle")" Size="15" />
+                <span>@_statusMessage</span>
+            </span>
+            <button type="button" class="v2-banner-close" aria-label="閉じる" @onclick="() => _statusMessage = null">
+                <UiIcon Name="x" Size="15" />
+            </button>
         </div>
     }
 
