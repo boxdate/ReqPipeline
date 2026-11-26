@@ -7,20 +7,21 @@
 <div class="container-fluid py-3 px-4" style="max-width: 1400px;">
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
         <div>
-            <h4 class="fw-bold mb-0">Behavior Catalog 管理 (振る舞い動詞定義)</h4>
-            <div class="text-muted small">
+            <h4 class="fw-bold mb-0 v2-text-primary">Behavior Catalog 管理 (振る舞い動詞定義)</h4>
+            <div class="v2-text-muted small">
                 Core 4プリミティブ (<code>SemanticEffect</code>) に紐づくドメイン固有の動詞・許可対象型・テンプレートを管理します。
             </div>
         </div>
-        <button type="button" class="btn btn-primary btn-sm" @onclick="CreateNewBehavior">
-            ＋ 新規Behaviorを追加
+        <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick="CreateNewBehavior">
+            <UiIcon Name="plus" Size="13" />
+            <span>新規 Behavior を追加</span>
         </button>
     </div>
 
     <div class="row g-3">
         <!-- Behavior List -->
         <div class="col-lg-7">
-            <div class="slot-card">
+            <div class="v2-card">
                 <div class="row g-2 mb-3">
                     <div class="col-md-5">
                         <input type="text" class="form-control form-control-sm" placeholder="ID・ラベル・説明で検索..."
@@ -45,8 +46,8 @@
                 </div>
 
                 <div class="table-responsive">
-                    <table class="table table-hover table-sm align-middle mb-0">
-                        <thead class="table-light">
+                    <table class="table v2-table table-hover table-sm align-middle mb-0">
+                        <thead>
                             <tr>
                                 <th>ID</th>
                                 <th>日本語名 / 英語名</th>
@@ -60,32 +61,34 @@
                             @foreach (var def in FilteredBehaviors())
                             {
                                 var isSelected = _selectedDefId == def.BehaviorDefId;
-                                <tr class="@(isSelected ? "table-primary" : "")" style="cursor:pointer"
+                                <tr class="@(isSelected ? "v2-row-selected" : "")" style="cursor:pointer"
                                     @onclick="() => SelectBehavior(def.BehaviorDefId)">
-                                    <td class="font-monospace small">@def.BehaviorDefId</td>
+                                    <td><span class="v2-mono-id">@def.BehaviorDefId</span></td>
                                     <td>
-                                        <div class="fw-semibold">@def.JapaneseLabel</div>
-                                        <div class="font-monospace small text-muted">@def.CanonicalLabel</div>
+                                        <div class="fw-semibold v2-text-primary">@def.JapaneseLabel</div>
+                                        <div class="v2-mono-id">@def.CanonicalLabel</div>
                                     </td>
-                                    <td><span class="chip-badge chip-type">@def.Effect</span></td>
-                                    <td class="small">
+                                    <td><span class="v2-badge v2-badge-outline">@def.Effect</span></td>
+                                    <td class="small v2-text-secondary">
                                         @if (def.AllowedTargetTypes.Count == 0)
                                         {
-                                            <span class="text-danger">未指定</span>
+                                            <span class="v2-text-danger">未指定</span>
                                         }
                                         else
                                         {
                                             <span>@string.Join(", ", def.AllowedTargetTypes)</span>
                                         }
                                     </td>
-                                    <td class="small text-muted font-monospace">
+                                    <td class="v2-mono-id">
                                         @(def.RequiresFromValue ? "From " : "")@(def.RequiresToValue ? "To" : "")@(!def.RequiresFromValue && !def.RequiresToValue ? "-" : "")
                                     </td>
                                     <td class="text-end">
-                                        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2"
+                                        <button type="button" class="v2-btn v2-btn-xs v2-btn-outline-danger"
+                                                title="Behavior を削除"
                                                 @onclick:stopPropagation="true"
                                                 @onclick="() => DeleteBehavior(def.BehaviorDefId)">
-                                            削除
+                                            <UiIcon Name="trash" Size="12" />
+                                            <span>削除</span>
                                         </button>
                                     </td>
                                 </tr>
@@ -103,16 +106,16 @@
             }
             @if (editing is null)
             {
-                <div class="slot-card text-center text-muted py-5">
-                    左の一覧から Behavior を選択するか、「＋ 新規Behaviorを追加」をクリックしてください。
+                <div class="v2-card text-center v2-text-muted py-5">
+                    左の一覧から Behavior を選択するか、「新規 Behavior を追加」をクリックしてください。
                 </div>
             }
             else
             {
-                <div class="slot-card">
+                <div class="v2-card">
                     <div class="d-flex align-items-center justify-content-between mb-3">
-                        <span class="fw-bold">Behavior 定義の編集</span>
-                        <span class="badge bg-secondary font-monospace">@editing.BehaviorDefId</span>
+                        <span class="fw-bold v2-text-primary">Behavior 定義の編集</span>
+                        <span class="v2-badge v2-badge-outline font-monospace">@editing.BehaviorDefId</span>
                     </div>
 
                     <div class="mb-2">
@@ -141,7 +144,7 @@
 
                     <div class="mb-3">
                         <label class="slot-label">説明 (Description)</label>
-                        <textarea class="form-control form-control-sm" rows="2"
+                        <textarea class="form-control form-control-sm v2-prose" rows="2"
                                   value="@editing.Description"
                                   @oninput="e => { editing.Description = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }"></textarea>
                     </div>
@@ -151,7 +154,7 @@
                     <div class="mb-3">
                         <div class="d-flex align-items-center justify-content-between mb-1">
                             <label class="slot-label mb-0">SemanticEffect (4意味プリミティブ)</label>
-                            <span class="small text-muted">選択時に推奨設定を自動補完</span>
+                            <span class="small v2-text-muted">選択時に推奨設定を自動補完</span>
                         </div>
                         <div class="chip-group">
                             @foreach (var effect in Enum.GetValues<SemanticEffect>())
@@ -186,7 +189,7 @@
                                 <input class="form-check-input" type="checkbox" id="chkReqFrom"
                                        checked="@editing.RequiresFromValue"
                                        @onchange="e => { editing.RequiresFromValue = e.Value is bool b && b; Workspace.NotifyChanged(); }" />
-                                <label class="form-check-label small" for="chkReqFrom">RequiresFromValue (遷移元必須)</label>
+                                <label class="form-check-label small v2-text-secondary" for="chkReqFrom">RequiresFromValue (遷移元必須)</label>
                             </div>
                         </div>
                         <div class="col-6">
@@ -194,7 +197,7 @@
                                 <input class="form-check-input" type="checkbox" id="chkReqTo"
                                        checked="@editing.RequiresToValue"
                                        @onchange="e => { editing.RequiresToValue = e.Value is bool b && b; Workspace.NotifyChanged(); }" />
-                                <label class="form-check-label small" for="chkReqTo">RequiresToValue (設定/遷移先必須)</label>
+                                <label class="form-check-label small v2-text-secondary" for="chkReqTo">RequiresToValue (設定/遷移先必須)</label>
                             </div>
                         </div>
                     </div>
@@ -204,7 +207,7 @@
                     <div class="mb-2">
                         <div class="d-flex align-items-center justify-content-between">
                             <label class="slot-label mb-0">日本語テンプレート (JapaneseTemplate)</label>
-                            <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none"
+                            <button type="button" class="v2-btn-link"
                                     @onclick="() => ApplyRecommendedDefaults(editing, editing.Effect)">
                                 推奨雛形を適用
                             </button>
@@ -221,25 +224,25 @@
                                placeholder="例: transition {target} from {from} to {to}"
                                value="@editing.EnglishTemplate"
                                @oninput="e => { editing.EnglishTemplate = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
-                        <div class="form-text small">
+                        <div class="small v2-text-muted mt-1">
                             プレースホルダ: <code>{target}</code>, <code>{from}</code>, <code>{to}</code>, <code>{prohibitedAction}</code>
                         </div>
                     </div>
 
                     <hr />
 
-                    <div class="preview-card mb-0">
+                    <div class="preview-box mb-0">
                         <div class="d-flex align-items-center justify-content-between mb-2">
-                            <div class="preview-lang mb-0">ダミー語彙でのリアルタイムプレビュー</div>
-                            <span class="badge bg-light text-dark border">@editing.Effect</span>
+                            <div class="wb-section-title mb-0">ダミー語彙でのリアルタイムプレビュー</div>
+                            <span class="v2-badge v2-badge-outline">@editing.Effect</span>
                         </div>
                         <div class="mb-2">
-                            <div class="small text-muted">日本語 (EARS):</div>
-                            <div class="preview-text">@RenderDummyPreview(editing, isJapanese: true)</div>
+                            <div class="small v2-text-muted">日本語 (EARS):</div>
+                            <div class="preview-sentence" style="font-size: 0.9rem;">@RenderDummyPreview(editing, isJapanese: true)</div>
                         </div>
                         <div>
-                            <div class="small text-muted">English (Canonical EARS):</div>
-                            <div class="preview-text font-monospace">@RenderDummyPreview(editing, isJapanese: false)</div>
+                            <div class="small v2-text-muted mb-1">English (Canonical EARS):</div>
+                            <div class="preview-en-block">@RenderDummyPreview(editing, isJapanese: false)</div>
                         </div>
                     </div>
                 </div>

@@ -25,18 +25,19 @@
         <div class="d-flex align-items-center justify-content-between mb-2 gap-1">
             <div>
                 <div class="wb-section-title mb-0">Customer Journeys</div>
-                <div class="small text-muted">しりとり検証シナリオ一覧 (@journeys.Count 件)</div>
+                <div class="small v2-text-muted">しりとり検証シナリオ一覧 (@journeys.Count 件)</div>
             </div>
-            <button type="button" class="btn btn-sm btn-primary py-1 px-2" @onclick="CreateJourney">
-                + ジャーニー追加
+            <button type="button" class="v2-btn v2-btn-xs v2-btn-primary" @onclick="CreateJourney">
+                <UiIcon Name="plus" Size="12" />
+                <span>ジャーニー追加</span>
             </button>
         </div>
 
         <div class="d-flex flex-column gap-1 mb-3">
             @if (journeys.Count == 0)
             {
-                <div class="small text-muted py-2">
-                    ジャーニーがまだありません。「+ ジャーニー追加」から作成してください。
+                <div class="small v2-text-muted py-2">
+                    ジャーニーがまだありません。「ジャーニー追加」から作成してください。
                 </div>
             }
             else
@@ -51,26 +52,28 @@
                          role="button"
                          @onclick="() => SelectJourney(j.Id)">
                         <div class="text-truncate" style="min-width: 0;">
-                            <div class="fw-semibold small text-truncate">[@j.Id] @j.Title</div>
-                            <div class="text-muted" style="font-size: 0.72rem;">
+                            <div class="fw-semibold small text-truncate v2-text-primary">
+                                <span class="v2-mono-id me-1">@j.Id</span>@j.Title
+                            </div>
+                            <div class="v2-text-muted" style="font-size: 0.72rem;">
                                 @j.Steps.Count ステップ
                             </div>
                         </div>
                         <div class="tree-badges">
                             @if (previewSim.IsAllPassed)
                             {
-                                <span class="chip-badge chip-ok">OK</span>
+                                <span class="v2-badge v2-badge-success">OK</span>
                             }
                             else
                             {
-                                <span class="chip-badge chip-err">@previewSim.FailedStepCount 断絶</span>
+                                <span class="v2-badge v2-badge-danger">@previewSim.FailedStepCount 断絶</span>
                             }
                             <button type="button"
-                                    class="btn btn-sm btn-outline-danger py-0 px-1"
+                                    class="v2-btn v2-btn-xs v2-btn-outline-danger p-1"
                                     title="ジャーニーを削除"
                                     @onclick:stopPropagation="true"
                                     @onclick="() => DeleteJourney(j.Id)">
-                                ×
+                                <UiIcon Name="trash" Size="11" />
                             </button>
                         </div>
                     </div>
@@ -92,7 +95,7 @@
                 </div>
                 <div>
                     <label class="slot-label">説明</label>
-                    <textarea class="form-control form-control-sm" rows="2"
+                    <textarea class="form-control form-control-sm v2-prose" rows="2"
                               placeholder="シナリオの目的や確認観点"
                               value="@selectedJourney.Description"
                               @oninput="e => { selectedJourney.Description = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }"></textarea>
@@ -103,13 +106,13 @@
 
             <div>
                 <div class="wb-section-title">初期状態 (InitialStates)</div>
-                <div class="small text-muted mb-2">
+                <div class="small v2-text-muted mb-2">
                     チップを切り替えると右ペインの検証結果がリアルタイム更新されます。
                 </div>
 
                 @if (stateTerms.Count == 0)
                 {
-                    <div class="small text-muted">
+                    <div class="small v2-text-muted">
                         <code>LifecycleState</code> または <code>StateVariable</code> (Boolean/Enum) の語彙がありません。
                     </div>
                 }
@@ -125,12 +128,12 @@
                             : null;
                         var effectiveVal = hasExplicit ? explicitVal : defaultVal;
 
-                        <div class="border rounded p-2 mb-2 bg-light">
+                        <div class="v2-subcard mb-2" style="background: var(--surface-card);">
                             <div class="d-flex align-items-center justify-content-between mb-1 gap-1">
-                                <span class="fw-semibold small">@term.GetDisplayName()</span>
-                                <span class="chip-badge chip-type">@term.ConceptType</span>
+                                <span class="fw-semibold small v2-text-primary">@term.GetDisplayName()</span>
+                                <span class="v2-badge v2-badge-outline">@term.ConceptType</span>
                             </div>
-                            <div class="font-monospace text-muted mb-2" style="font-size: 0.72rem;">
+                            <div class="v2-mono-id mb-2" style="font-size: 0.72rem;">
                                 @term.CanonicalName (@term.Id)
                             </div>
 
@@ -165,55 +168,58 @@
     <section class="wb-pane wb-pane-center">
         @if (selectedJourney is null || simulation is null)
         {
-            <div class="slot-card text-center py-5 text-muted">
-                左ペインからジャーニーを選択するか、「+ ジャーニー追加」で作成してください。
+            <div class="v2-card text-center py-5 v2-text-muted">
+                左ペインからジャーニーを選択するか、「ジャーニー追加」で作成してください。
             </div>
         }
         else
         {
             <!-- Header Banner: Overall Verdict & Final States -->
-            <div class="slot-card mb-3">
+            <div class="v2-card mb-3">
                 <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-2">
                     <div>
                         <div class="d-flex align-items-center gap-2 flex-wrap">
-                            <span class="badge bg-dark font-monospace">@selectedJourney.Id</span>
-                            <h5 class="fw-bold mb-0">@selectedJourney.Title</h5>
+                            <span class="v2-badge v2-badge-outline font-monospace">@selectedJourney.Id</span>
+                            <h5 class="fw-bold mb-0 v2-text-primary">@selectedJourney.Title</h5>
                         </div>
                         @if (!string.IsNullOrWhiteSpace(selectedJourney.Description))
                         {
-                            <div class="small text-muted mt-1">@selectedJourney.Description</div>
+                            <div class="small v2-text-secondary v2-prose mt-1">@selectedJourney.Description</div>
                         }
                     </div>
 
                     <div class="d-flex align-items-center gap-2 flex-wrap">
                         @if (simulation.IsAllPassed)
                         {
-                            <span class="badge bg-success fs-6 py-2 px-3">
-                                ✓ All Steps Connected
+                            <span class="v2-badge v2-badge-success" style="font-size: 0.8rem; padding: 0.3rem 0.7rem;">
+                                <UiIcon Name="check-circle" Size="14" />
+                                <span>All Steps Connected</span>
                             </span>
                         }
                         else
                         {
-                            <span class="badge bg-danger fs-6 py-2 px-3">
-                                ✗ @simulation.FailedStepCount Step(s) Broken
+                            <span class="v2-badge v2-badge-danger" style="font-size: 0.8rem; padding: 0.3rem 0.7rem;">
+                                <UiIcon Name="x-circle" Size="14" />
+                                <span>@simulation.FailedStepCount Step(s) Broken</span>
                             </span>
                         }
 
                         @if (simulation.BlockedStepCount > 0)
                         {
-                            <span class="badge bg-warning text-dark py-2 px-2">
-                                🛑 Blocked: @simulation.BlockedStepCount
+                            <span class="v2-badge v2-badge-warning" style="font-size: 0.78rem; padding: 0.28rem 0.6rem;">
+                                <UiIcon Name="ban" Size="13" />
+                                <span>Blocked: @simulation.BlockedStepCount</span>
                             </span>
                         }
                     </div>
                 </div>
 
                 <!-- Final States Summary -->
-                <div class="border-top pt-2 mt-2 d-flex align-items-center flex-wrap gap-2">
-                    <span class="small fw-semibold text-muted">最終状態 (FinalStates):</span>
+                <div class="pt-2 mt-2 d-flex align-items-center flex-wrap gap-2" style="border-top: 1px solid var(--border-subtle);">
+                    <span class="small fw-semibold v2-text-muted">最終状態 (FinalStates):</span>
                     @if (simulation.FinalStates.Count == 0)
                     {
-                        <span class="small text-muted">なし</span>
+                        <span class="small v2-text-muted">なし</span>
                     }
                     else
                     {
@@ -224,8 +230,8 @@
                             var valLabel = term is not null ? FormatValueChip(term, kv.Value) : kv.Value;
 
                             <span class="journey-baton-pill">
-                                <span class="text-muted">@termLabel:</span>
-                                <span class="text-primary">@valLabel</span>
+                                <span class="v2-text-muted">@termLabel:</span>
+                                <span class="v2-text-accent">@valLabel</span>
                             </span>
                         }
                     }
@@ -235,8 +241,8 @@
             <!-- Timeline Steps -->
             @if (selectedJourney.Steps.Count == 0)
             {
-                <div class="slot-card text-center py-4 text-muted">
-                    まだステップがありません。下の「＋ ステップを追加」からユーザー行動を追加してください。
+                <div class="v2-card text-center py-4 v2-text-muted">
+                    まだステップがありません。下の「ステップを追加」からユーザー行動を追加してください。
                 </div>
             }
             else
@@ -258,51 +264,69 @@
 
                     @if (idx > 0)
                     {
-                        <div class="journey-arrow" aria-hidden="true">↓</div>
+                        <div class="journey-arrow" aria-hidden="true">
+                            <UiIcon Name="chevron-down" Size="16" />
+                        </div>
                     }
 
                     <div class="journey-step-card @cardStatusClass">
                         <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                             <div class="d-flex align-items-center gap-2 flex-wrap">
-                                <span class="badge bg-dark">Step @(idx + 1)</span>
-                                <span class="font-monospace small text-muted">@step.StepId</span>
+                                <span class="v2-badge v2-badge-outline">Step @(idx + 1)</span>
+                                <span class="v2-mono-id">@step.StepId</span>
                                 @switch (stepResult.Status)
                                 {
                                     case JourneyStepStatus.Passed:
-                                        <span class="chip-badge chip-ok">✅ PASS</span>
+                                        <span class="v2-badge v2-badge-success">
+                                            <UiIcon Name="check-circle" Size="12" />
+                                            <span>PASS</span>
+                                        </span>
                                         break;
                                     case JourneyStepStatus.Blocked:
-                                        <span class="chip-badge chip-warn">🛑 BLOCKED</span>
+                                        <span class="v2-badge v2-badge-warning">
+                                            <UiIcon Name="ban" Size="12" />
+                                            <span>BLOCKED</span>
+                                        </span>
                                         break;
                                     case JourneyStepStatus.StateMismatch:
-                                        <span class="chip-badge chip-err">❌ バトン断絶</span>
+                                        <span class="v2-badge v2-badge-danger">
+                                            <UiIcon Name="x-circle" Size="12" />
+                                            <span>バトン断絶</span>
+                                        </span>
                                         break;
                                     case JourneyStepStatus.PreconditionFailed:
-                                        <span class="chip-badge chip-err">❌ 前提不一致</span>
+                                        <span class="v2-badge v2-badge-danger">
+                                            <UiIcon Name="x-circle" Size="12" />
+                                            <span>前提不一致</span>
+                                        </span>
                                         break;
                                     case JourneyStepStatus.InvalidRequirement:
-                                        <span class="chip-badge chip-err">❌ 要求不正</span>
+                                        <span class="v2-badge v2-badge-danger">
+                                            <UiIcon Name="x-circle" Size="12" />
+                                            <span>要求不正</span>
+                                        </span>
                                         break;
                                 }
                             </div>
 
                             <div class="d-flex align-items-center gap-1">
-                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline"
                                         disabled="@(idx == 0)"
                                         title="上へ移動"
                                         @onclick="() => Workspace.MoveJourneyStep(selectedJourney, idx, -1)">
-                                    ↑
+                                    <UiIcon Name="chevron-up" Size="13" />
                                 </button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline"
                                         disabled="@(idx == selectedJourney.Steps.Count - 1)"
                                         title="下へ移動"
                                         @onclick="() => Workspace.MoveJourneyStep(selectedJourney, idx, 1)">
-                                    ↓
+                                    <UiIcon Name="chevron-down" Size="13" />
                                 </button>
-                                <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2"
+                                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline-danger"
                                         title="ステップ削除"
                                         @onclick="() => Workspace.DeleteJourneyStep(selectedJourney, idx)">
-                                    削除
+                                    <UiIcon Name="trash" Size="12" />
+                                    <span>削除</span>
                                 </button>
                             </div>
                         </div>
@@ -331,16 +355,17 @@
 
                         @if (matchedReq is not null)
                         {
-                            <div class="border rounded p-2 mb-2 bg-light small">
+                            <div class="v2-subcard mb-2 small">
                                 <div class="d-flex align-items-center justify-content-between gap-2">
-                                    <span class="fw-semibold text-dark">@Workspace.RenderJapanesePreview(matchedReq)</span>
+                                    <span class="fw-semibold v2-text-primary v2-prose">@Workspace.RenderJapanesePreview(matchedReq)</span>
                                     <button type="button"
-                                            class="btn btn-link btn-sm p-0 text-decoration-none flex-shrink-0"
+                                            class="v2-btn-link flex-shrink-0"
                                             @onclick="() => NavigateToRequirement(matchedReq.Id)">
-                                        Workbench で開く →
+                                        <span>Workbench で開く</span>
+                                        <UiIcon Name="external-link" Size="12" />
                                     </button>
                                 </div>
-                                <div class="font-monospace text-muted mt-1" style="font-size: 0.74rem;">
+                                <div class="font-monospace v2-text-muted mt-1" style="font-size: 0.74rem; line-height: 1.55;">
                                     @Workspace.RenderEnglishPreview(matchedReq)
                                 </div>
                             </div>
@@ -358,7 +383,7 @@
                                 }
                             </div>
 
-                            <div class="small @(stepResult.Status is JourneyStepStatus.Passed ? "text-success" : stepResult.Status == JourneyStepStatus.Blocked ? "text-warning-emphasis fw-semibold" : "text-danger fw-semibold")">
+                            <div class="small @(stepResult.Status is JourneyStepStatus.Passed ? "v2-text-success" : stepResult.Status == JourneyStepStatus.Blocked ? "v2-text-warning fw-semibold" : "v2-text-danger fw-semibold")">
                                 @stepResult.Message
                             </div>
                         </div>
@@ -367,8 +392,9 @@
             }
 
             <div class="mt-3 mb-4">
-                <button type="button" class="btn btn-primary btn-sm" @onclick="() => Workspace.AddJourneyStep(selectedJourney)">
-                    ＋ ステップを追加
+                <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick="() => Workspace.AddJourneyStep(selectedJourney)">
+                    <UiIcon Name="plus" Size="13" />
+                    <span>ステップを追加</span>
                 </button>
             </div>
         }
@@ -491,7 +517,7 @@
             var toLabel = FormatValueChip(targetTerm, behavior.ToValue);
             if (stepResult.Status == JourneyStepStatus.Passed)
             {
-                return $"{targetTerm.CanonicalName}: {fromLabel} ➔ {toLabel}";
+                return $"{targetTerm.CanonicalName}: {fromLabel} → {toLabel}";
             }
 
             stepResult.StateBefore.TryGetValue(behavior.TargetTermRef, out var actual);

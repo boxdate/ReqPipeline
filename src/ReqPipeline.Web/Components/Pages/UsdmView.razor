@@ -5,11 +5,11 @@
 
 <PageTitle>USDM View - ReqPipeline V2</PageTitle>
 
-<div class="container py-3" style="max-width: 1100px;">
+<div class="container py-3" style="max-width: 1140px;">
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
         <div>
-            <h4 class="fw-bold mb-0">USDM Markdown View</h4>
-            <div class="text-muted small">
+            <h4 class="fw-bold mb-0 v2-text-primary">USDM Markdown View</h4>
+            <div class="v2-text-muted small">
                 <code>UsdmMarkdownRenderer</code> による <code>Rationale → Composite → Atomic</code> の決定論的出力
             </div>
         </div>
@@ -17,13 +17,18 @@
         <div class="d-flex align-items-center gap-2">
             @if (_copied)
             {
-                <span class="chip-badge chip-ok">コピーしました</span>
+                <span class="v2-badge v2-badge-success">
+                    <UiIcon Name="check-circle" Size="12" />
+                    <span>コピーしました</span>
+                </span>
             }
-            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CopyMarkdown">
-                Markdownをコピー
+            <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" @onclick="CopyMarkdown">
+                <UiIcon Name="copy" Size="13" />
+                <span>Markdown をコピー</span>
             </button>
-            <button type="button" class="btn btn-sm btn-primary" @onclick="DownloadMarkdown">
-                .md ダウンロード
+            <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick="DownloadMarkdown">
+                <UiIcon Name="download" Size="13" />
+                <span>.md ダウンロード</span>
             </button>
         </div>
     </div>
@@ -31,36 +36,41 @@
     <div class="row g-3">
         <!-- Structured Visual Preview -->
         <div class="col-lg-6">
-            <div class="slot-card h-100">
+            <div class="v2-card h-100">
                 <div class="wb-section-title">Structured Hierarchy Preview</div>
-                <h5 class="fw-bold">@Workspace.Document.Title</h5>
+                <h5 class="fw-bold v2-text-primary">@Workspace.Document.Title</h5>
                 @if (!string.IsNullOrWhiteSpace(Workspace.Document.Description))
                 {
-                    <p class="small text-muted">@Workspace.Document.Description</p>
+                    <p class="small v2-text-secondary v2-prose">@Workspace.Document.Description</p>
                 }
 
                 @foreach (var rat in Workspace.Document.Rationales)
                 {
-                    <div class="border rounded p-3 mb-3 bg-light">
-                        <div class="fw-bold text-primary">[@rat.Id] @rat.Title</div>
-                        <div class="small text-muted mb-2">@rat.Description</div>
+                    <div class="v2-usdm-rationale">
+                        <div class="fw-bold v2-text-primary">
+                            <span class="v2-mono-id me-1">@rat.Id</span>@rat.Title
+                        </div>
+                        <div class="small v2-text-secondary v2-prose mb-2">@rat.Description</div>
 
                         @foreach (var comp in Workspace.Document.Requirements
                             .Where(r => string.IsNullOrWhiteSpace(r.ParentRequirementId) && r.RationaleRefs.Contains(rat.Id)))
                         {
                             <div class="ms-2 mt-2">
-                                <div class="fw-semibold small">▸ [@comp.Id] @comp.Title</div>
+                                <div class="fw-semibold small v2-text-primary">
+                                    <span class="v2-mono-id me-1">@comp.Id</span>@comp.Title
+                                </div>
                                 @if (!string.IsNullOrWhiteSpace(comp.Summary))
                                 {
-                                    <div class="small text-dark mt-1 mb-1 ps-2 border-start border-2 border-primary">@comp.Summary</div>
+                                    <div class="small v2-usdm-summary mt-1 mb-2">@comp.Summary</div>
                                 }
-                                <ol class="small mt-1 mb-0">
+                                <ol class="small v2-prose mt-1 mb-0">
                                     @foreach (var child in Workspace.Document.Requirements.Where(c => c.ParentRequirementId == comp.Id))
                                     {
                                         <li class="mb-1">
-                                            <strong>[@child.Id] @child.Title</strong>
-                                            <span class="badge bg-white text-dark border mx-1">@child.EarsPattern</span>
-                                            <span>@Workspace.RenderJapanesePreview(child)</span>
+                                            <span class="v2-mono-id fw-bold me-1">@child.Id</span>
+                                            <strong class="v2-text-primary">@child.Title</strong>
+                                            <span class="v2-badge v2-badge-outline mx-1">@child.EarsPattern</span>
+                                            <span class="v2-text-secondary">@Workspace.RenderJapanesePreview(child)</span>
                                         </li>
                                     }
                                 </ol>
@@ -73,9 +83,9 @@
 
         <!-- Raw Markdown -->
         <div class="col-lg-6">
-            <div class="slot-card h-100 d-flex flex-column">
+            <div class="v2-card h-100 d-flex flex-column">
                 <div class="wb-section-title">Generated Markdown Source</div>
-                <pre class="bg-dark text-light p-3 rounded small flex-grow-1 mb-0" style="white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">@Workspace.RenderUsdmMarkdown()</pre>
+                <pre class="v2-code-block flex-grow-1">@Workspace.RenderUsdmMarkdown()</pre>
             </div>
         </div>
     </div>
