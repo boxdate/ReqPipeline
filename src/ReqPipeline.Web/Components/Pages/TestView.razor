@@ -1,0 +1,895 @@
+@page "/tests"
+@implements IDisposable
+@inject WorkspaceStateService Workspace
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Test View - ReqPipeline V2</PageTitle>
+
+@{
+    var isJa = _language == TestExportLanguage.Japanese;
+    var summary = _spec.Summary;
+    var reqContainers = _spec.ViewpointContainers
+        .Where(c => c.Kind == TestViewpointKind.RequirementTree)
+        .ToList();
+    var fsmContainers = _spec.ViewpointContainers
+        .Where(c => c.Kind == TestViewpointKind.FsmMatrix)
+        .ToList();
+    var journeyContainers = _spec.ViewpointContainers
+        .Where(c => c.Kind == TestViewpointKind.Journey)
+        .ToList();
+
+    var selectedContainer = _selectedContainerId is null
+        ? null
+        : _spec.ViewpointContainers.FirstOrDefault(c => string.Equals(c.Id, _selectedContainerId, StringComparison.Ordinal));
+    var selectedMatrix = selectedContainer?.Kind == TestViewpointKind.FsmMatrix
+        ? _spec.TransitionMatrices.FirstOrDefault(m => string.Equals(m.LifecycleTermId, selectedContainer.Id, StringComparison.Ordinal))
+        : null;
+
+    var baseCases = selectedContainer is null
+        ? _spec.AllTestCases
+        : selectedContainer.TestCases;
+    var filteredCases = ApplyFilters(baseCases);
+}
+
+<div class="testview-shell">
+    <!-- ==================== TOP SUMMARY & EXPORT BAR ==================== -->
+    <div class="testview-topbar">
+        <div class="d-flex align-items-center flex-wrap gap-2">
+            <span class="fw-bold small text-dark me-1">Test View</span>
+            <span class="tv-stat-pill" title="テスト観点コンテナ総数">
+                @(isJa ? "観点コンテナ" : "Viewpoints"): @summary.TotalViewpointContainers
+            </span>
+            <span class="tv-stat-pill tv-stat-info"
+                  title="Unit: @summary.UnitTestCaseCount / Component: @summary.ComponentTestCaseCount / E2E: @summary.E2ETestCaseCount">
+                @(isJa ? "総ケース数" : "Test Cases"): @summary.TotalTestCases
+            </span>
+            <span class="tv-stat-pill @(summary.AtomicRequirementCoveragePercent >= 100.0 ? "tv-stat-ok" : "tv-stat-warn")"
+                  title="@summary.CoveredAtomicRequirements / @summary.TotalNonEscapeAtomicRequirements Atomic Requirements">
+                @(isJa ? "要求カバレッジ" : "Coverage"): @summary.AtomicRequirementCoveragePercent.ToString("0.0")%
+            </span>
+            <span class="tv-stat-pill @(summary.TotalUndefinedCells > 0 ? "tv-stat-warn" : "tv-stat-ok")"
+                  title="FSM マトリクス内の未定義 (UndefinedNoOp) セル総数">
+                @(isJa ? "未定義セル" : "Undefined Cells"): @summary.TotalUndefinedCells
+            </span>
+            <span class="tv-stat-pill @(summary.EscapeManualReviewCount > 0 ? "tv-stat-warn" : "tv-stat-ok")"
+                  title="自動展開不可の EscapeRecord（手動テスト設計要）">
+                @(isJa ? "Escape 要手動確認" : "Escape Manual"): @summary.EscapeManualReviewCount
+            </span>
+        </div>
+
+        <div class="d-flex align-items-center flex-wrap gap-2">
+            @if (!string.IsNullOrWhiteSpace(_exportFeedback))
+            {
+                <span class="chip-badge chip-ok">@_exportFeedback</span>
+            }
+
+            <!-- 言語切替 -->
+            <div class="btn-group btn-group-sm" role="group" aria-label="Export & Display Language">
+                <button type="button"
+                        class="btn @(isJa ? "btn-primary" : "btn-outline-secondary")"
+                        @onclick="() => _language = TestExportLanguage.Japanese">
+                    日本語
+                </button>
+                <button type="button"
+                        class="btn @(!isJa ? "btn-primary" : "btn-outline-secondary")"
+                        @onclick="() => _language = TestExportLanguage.English">
+                    English
+                </button>
+            </div>
+
+            <!-- Markdown -->
+            <div class="btn-group btn-group-sm" role="group" aria-label="Markdown Export">
+                <button type="button" class="btn btn-outline-secondary" @onclick="CopyMarkdown" title="Markdown をクリップボードへコピー">
+                    MD コピー
+                </button>
+                <button type="button" class="btn btn-outline-primary" @onclick="DownloadMarkdown" title="Markdown (.md) をダウンロード">
+                    .md DL
+                </button>
+            </div>
+
+            <!-- CSV -->
+            <div class="d-inline-flex align-items-center gap-1 border rounded px-2 py-1 bg-light">
+                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" @onclick="DownloadCsv" title="UTF-8 BOM 付き CSV をダウンロード">
+                    CSV DL
+                </button>
+                <label class="form-check-label small d-inline-flex align-items-center gap-1 mb-0" style="cursor: pointer;" title="末尾に Result, Tester, ExecutedAt, Comment の4列を追加">
+                    <input type="checkbox" class="form-check-input mt-0" @bind="_csvIncludeExecutionColumns" />
+                    <span>実行列</span>
+                </label>
+            </div>
+
+            <!-- Gherkin -->
+            <div class="d-inline-flex align-items-center gap-1 border rounded px-2 py-1 bg-light">
+                <select class="form-select form-select-sm py-0" style="width: auto; font-size: 0.76rem;" @bind="_gherkinLevelFilter" aria-label="Gherkin Level">
+                    <option value="">全階層</option>
+                    <option value="Unit">Unit</option>
+                    <option value="Component">Component (FSM)</option>
+                    <option value="E2E">E2E</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" @onclick="CopyGherkin" title="Gherkin をクリップボードへコピー">
+                    Gherkin コピー
+                </button>
+                <button type="button" class="btn btn-sm btn-primary py-0 px-2" @onclick="DownloadGherkin" title="Gherkin (.feature) をダウンロード">
+                    .feature DL
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 2-PANE MAIN AREA ==================== -->
+    <div class="testview-grid">
+        <!-- LEFT PANE: VIEWPOINT CONTAINER TREE -->
+        <aside class="wb-pane wb-pane-left">
+            <div class="mb-3">
+                <button type="button"
+                        class="tree-node-btn @(_selectedContainerId is null ? "selected" : "")"
+                        @onclick="() => SelectContainer(null)">
+                    <span class="tree-node-label fw-semibold">
+                        @(isJa ? "すべて表示（全テストケース）" : "Show All Test Cases")
+                    </span>
+                    <span class="tree-badges">
+                        <span class="chip-badge chip-type">@summary.TotalTestCases</span>
+                    </span>
+                </button>
+            </div>
+
+            <!-- 1. 要求・達成基準軸 (Rationale -> CompositeRequirement) -->
+            <div class="wb-section-title">@(isJa ? "要求・達成基準軸 (WDD コンテナ)" : "Requirement Viewpoints")</div>
+            @if (reqContainers.Count == 0)
+            {
+                <div class="small text-muted mb-3">@(isJa ? "要求コンテナがありません。" : "No requirement containers.")</div>
+            }
+            else
+            {
+                var groupedByRat = reqContainers
+                    .GroupBy(c => c.RationaleId ?? string.Empty, StringComparer.Ordinal)
+                    .OrderBy(g => string.IsNullOrEmpty(g.Key) ? 1 : 0)
+                    .ThenBy(g => g.Key, StringComparer.Ordinal);
+
+                @foreach (var ratGroup in groupedByRat)
+                {
+                    var ratId = ratGroup.Key;
+                    var ratTitle = ratGroup.First().RationaleTitle;
+
+                    <div class="tree-rationale">
+                        <div class="small fw-bold text-secondary px-2 py-1 bg-light rounded mb-1 text-truncate"
+                             title="@(string.IsNullOrEmpty(ratId) ? "根拠未設定" : $"[{ratId}] {ratTitle}")">
+                            @if (string.IsNullOrEmpty(ratId))
+                            {
+                                <span>@(isJa ? "根拠未設定" : "No Rationale")</span>
+                            }
+                            else
+                            {
+                                <span>[@ratId] @ratTitle</span>
+                            }
+                        </div>
+
+                        @foreach (var comp in ratGroup)
+                        {
+                            var isSelected = string.Equals(_selectedContainerId, comp.Id, StringComparison.Ordinal);
+                            <button type="button"
+                                    class="tree-node-btn @(isSelected ? "selected" : "")"
+                                    @onclick="() => SelectContainer(comp.Id)">
+                                <span class="tree-node-label" title="[@comp.Id] @comp.Title">
+                                    <code>@comp.Id</code> @(isJa ? comp.Title : comp.TitleEn)
+                                </span>
+                                <span class="tree-badges">
+                                    @if (comp.HasEscapeRecords)
+                                    {
+                                        <span class="chip-badge chip-warn" title="手動テスト設計が必要な EscapeRecord あり">
+                                            ⚠ 手動設計要
+                                        </span>
+                                    }
+                                    <span class="chip-badge chip-type">@comp.TestCases.Count</span>
+                                </span>
+                            </button>
+                        }
+                    </div>
+                }
+            }
+
+            <hr class="my-2" />
+
+            <!-- 2. 横断モデル軸: FSM 状態遷移マトリクス -->
+            <div class="wb-section-title">@(isJa ? "FSM 状態遷移マトリクス" : "FSM Transition Matrices")</div>
+            <div class="mb-3">
+                @if (fsmContainers.Count == 0)
+                {
+                    <div class="small text-muted">@(isJa ? "LifecycleState がありません。" : "No LifecycleState defined.")</div>
+                }
+                else
+                {
+                    @foreach (var fsm in fsmContainers)
+                    {
+                        var isSelected = string.Equals(_selectedContainerId, fsm.Id, StringComparison.Ordinal);
+                        <button type="button"
+                                class="tree-node-btn @(isSelected ? "selected" : "")"
+                                @onclick="() => SelectContainer(fsm.Id)">
+                            <span class="tree-node-label" title="@fsm.Title">
+                                @(isJa ? fsm.Title : fsm.TitleEn)
+                            </span>
+                            <span class="tree-badges">
+                                @if (fsm.UndefinedCellCount > 0)
+                                {
+                                    <span class="chip-badge chip-warn" title="未定義セル数">
+                                        未定義 @fsm.UndefinedCellCount
+                                    </span>
+                                }
+                                <span class="chip-badge chip-type">@fsm.TestCases.Count</span>
+                            </span>
+                        </button>
+                    }
+                }
+            </div>
+
+            <!-- 3. 横断モデル軸: E2E シナリオ -->
+            <div class="wb-section-title">@(isJa ? "E2E シナリオ (Journey)" : "E2E Scenarios (Journeys)")</div>
+            <div>
+                @if (journeyContainers.Count == 0)
+                {
+                    <div class="small text-muted">@(isJa ? "Journey がありません。" : "No journeys defined.")</div>
+                }
+                else
+                {
+                    @foreach (var jrn in journeyContainers)
+                    {
+                        var isSelected = string.Equals(_selectedContainerId, jrn.Id, StringComparison.Ordinal);
+                        <button type="button"
+                                class="tree-node-btn @(isSelected ? "selected" : "")"
+                                @onclick="() => SelectContainer(jrn.Id)">
+                            <span class="tree-node-label" title="[@jrn.Id] @jrn.Title">
+                                <code>@jrn.Id</code> @(isJa ? jrn.Title : jrn.TitleEn)
+                            </span>
+                            <span class="tree-badges">
+                                @if (jrn.HasBlockedSteps)
+                                {
+                                    <span class="chip-badge chip-err">ブロック</span>
+                                }
+                                else
+                                {
+                                    <span class="chip-badge chip-ok">正常</span>
+                                }
+                            </span>
+                        </button>
+                    }
+                }
+            </div>
+        </aside>
+
+        <!-- RIGHT PANE: DETAIL & INTERACTIVE 2D MATRIX -->
+        <section class="wb-pane wb-pane-center">
+            <!-- 共通フィルタバー -->
+            <div class="slot-card py-2 px-3 mb-3">
+                <div class="d-flex align-items-center flex-wrap gap-2">
+                    <span class="small fw-bold text-secondary">@(isJa ? "フィルタ:" : "Filters:")</span>
+
+                    <select class="form-select form-select-sm" style="width: auto;" @bind="_filterLevel" aria-label="Test Level Filter">
+                        <option value="">@(isJa ? "階層: すべて" : "Level: All")</option>
+                        @foreach (var lvl in Enum.GetValues<TestLevel>())
+                        {
+                            <option value="@lvl">@lvl</option>
+                        }
+                    </select>
+
+                    <select class="form-select form-select-sm" style="width: auto;" @bind="_filterTechnique" aria-label="Technique Filter">
+                        <option value="">@(isJa ? "技法: すべて" : "Technique: All")</option>
+                        @foreach (var tech in Enum.GetValues<TestTechnique>())
+                        {
+                            <option value="@tech">@tech</option>
+                        }
+                    </select>
+
+                    <select class="form-select form-select-sm" style="width: auto;" @bind="_filterOutcome" aria-label="Expected Outcome Filter">
+                        <option value="">@(isJa ? "期待結果: すべて" : "Outcome: All")</option>
+                        @foreach (var oc in Enum.GetValues<ExpectedTestOutcome>())
+                        {
+                            <option value="@oc">@oc</option>
+                        }
+                    </select>
+
+                    <label class="form-check-label small d-inline-flex align-items-center gap-1 ms-1 mb-0" style="cursor: pointer;">
+                        <input type="checkbox" class="form-check-input mt-0" @bind="_showUndefinedNoOpCases" />
+                        <span>@(isJa ? "未定義セル（No-op）ケースを表示" : "Show Undefined (No-op) Cases")</span>
+                    </label>
+
+                    @if (HasActiveFilters())
+                    {
+                        <button type="button" class="btn btn-sm btn-link text-decoration-none py-0 px-1" @onclick="ResetFilters">
+                            @(isJa ? "リセット" : "Reset")
+                        </button>
+                    }
+
+                    <span class="ms-auto small text-muted">
+                        @(isJa ? $"表示: {filteredCases.Count} / {baseCases.Count} 件" : $"Showing: {filteredCases.Count} / {baseCases.Count}")
+                    </span>
+                </div>
+            </div>
+
+            @if (selectedMatrix is not null)
+            {
+                <!-- ==================== FSM 2D INTERACTIVE MATRIX VIEW ==================== -->
+                <div class="slot-card">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                        <div>
+                            <h5 class="fw-bold mb-0">
+                                @(isJa ? selectedMatrix.LifecycleLabel : selectedMatrix.LifecycleCanonicalLabel)
+                                <code class="small ms-1">@selectedMatrix.LifecycleTermId</code>
+                            </h5>
+                            <div class="small text-muted">
+                                @(isJa
+                                    ? "セルをクリックすると下部に該当テストケースと根拠要求が展開されます。"
+                                    : "Click any cell to inspect derived test cases and source requirements below.")
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-center flex-wrap gap-3">
+                            <label class="form-check-label small d-inline-flex align-items-center gap-1 fw-semibold mb-0" style="cursor: pointer;">
+                                <input type="checkbox" class="form-check-input mt-0" @bind="_highlightUndefinedOnly" />
+                                <span>@(isJa ? "未定義セルのみハイライト" : "Highlight Undefined Cells Only")</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 凡例 -->
+                    <div class="d-flex align-items-center flex-wrap gap-2 mb-3 small">
+                        <span class="badge text-primary border border-primary-subtle bg-primary-subtle">➔ @(isJa ? "有効遷移" : "ValidTransition")</span>
+                        <span class="badge text-info-emphasis border border-info-subtle bg-info-subtle">➔ @(isJa ? "条件付き遷移" : "ConditionalTransition")</span>
+                        <span class="badge text-danger border border-danger-subtle bg-danger-subtle">⛔ @(isJa ? "明示的禁止" : "ExplicitProhibit")</span>
+                        <span class="badge text-secondary border border-secondary-subtle bg-light">— @(isJa ? "未定義 (No-op)" : "UndefinedNoOp")</span>
+                    </div>
+
+                    @if (selectedMatrix.Events.Count == 0)
+                    {
+                        <div class="small text-muted py-3">
+                            @(isJa ? "この LifecycleState に関連するイベントがありません。" : "No events related to this LifecycleState.")
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="fsm-matrix-scroll">
+                            <table class="fsm-matrix-table">
+                                <thead>
+                                    <tr>
+                                        <th class="fsm-matrix-sticky-col">@(isJa ? "状態 \\ イベント" : "State \\ Event")</th>
+                                        @foreach (var evt in selectedMatrix.Events)
+                                        {
+                                            <th>
+                                                <div>@(isJa ? evt.DisplayName : evt.CanonicalName)</div>
+                                                <code class="small fw-normal text-muted">@evt.EventTermId</code>
+                                            </th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var state in selectedMatrix.States)
+                                    {
+                                        var stateLabel = selectedMatrix.StateLabels.TryGetValue(state, out var lbl) ? lbl : state;
+                                        <tr>
+                                            <td class="fsm-matrix-sticky-col">
+                                                <div class="fw-semibold">@(isJa ? stateLabel : state)</div>
+                                                <code class="small text-muted">@state</code>
+                                            </td>
+                                            @foreach (var evt in selectedMatrix.Events)
+                                            {
+                                                var cell = selectedMatrix.GetCell(state, evt.EventTermId);
+                                                <td>
+                                                    @if (cell is not null)
+                                                    {
+                                                        var isCellSelected = string.Equals(_selectedCellState, cell.FromState, StringComparison.Ordinal)
+                                                            && string.Equals(_selectedCellEventId, cell.EventTermId, StringComparison.Ordinal);
+                                                        var isDimmed = _highlightUndefinedOnly && cell.Classification != MatrixCellKind.UndefinedNoOp;
+
+                                                        <button type="button"
+                                                                class="matrix-cell-btn @GetMatrixCellClass(cell) @(isDimmed ? "matrix-cell-dimmed" : "") @(isCellSelected ? "matrix-cell-selected" : "")"
+                                                                @onclick="() => SelectMatrixCell(cell.FromState, cell.EventTermId)">
+                                                            <span>@FormatMatrixCellBadge(cell, isJa)</span>
+                                                            <span class="opacity-75" style="font-size: 0.7rem;">
+                                                                @cell.TestCases.Count @(isJa ? "ケース" : "case(s)")
+                                                                @if (cell.RelatedRequirementIds.Count > 0)
+                                                                {
+                                                                    <span>· @string.Join(", ", cell.RelatedRequirementIds)</span>
+                                                                }
+                                                            </span>
+                                                        </button>
+                                                    }
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+
+                <!-- 選択セルの詳細パネル -->
+                @if (_selectedCellState is not null && _selectedCellEventId is not null)
+                {
+                    var activeCell = selectedMatrix.GetCell(_selectedCellState, _selectedCellEventId);
+                    if (activeCell is not null)
+                    {
+                        var cellCases = ApplyFilters(activeCell.TestCases);
+                        <div class="slot-card border-primary">
+                            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                                <div>
+                                    <div class="wb-section-title mb-0">@(isJa ? "選択セルの詳細" : "Selected Cell Details")</div>
+                                    <h6 class="fw-bold mb-0">
+                                        [@(isJa ? activeCell.FromStateLabel : activeCell.FromState)] × [@(isJa ? activeCell.EventDisplayName : activeCell.EventCanonicalName)]
+                                        <span class="badge bg-secondary ms-1">@activeCell.Classification</span>
+                                        @if (activeCell.HasProhibit)
+                                        {
+                                            <span class="badge bg-danger ms-1">HasProhibit</span>
+                                        }
+                                    </h6>
+                                </div>
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    @foreach (var reqId in activeCell.RelatedRequirementIds)
+                                    {
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-primary py-0 px-2"
+                                                @onclick="() => OpenInWorkbench(reqId)">
+                                            @reqId を Workbench で開く →
+                                        </button>
+                                    }
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                            @onclick="ClearSelectedCell">
+                                        ×
+                                    </button>
+                                </div>
+                            </div>
+
+                            @if (cellCases.Count == 0)
+                            {
+                                <div class="small text-muted py-2">
+                                    @(isJa ? "現在のフィルタ条件に一致するセル内テストケースはありません。" : "No test cases in this cell match the active filters.")
+                                </div>
+                            }
+                            else
+                            {
+                                @foreach (var tc in cellCases)
+                                {
+                                    @RenderTestCaseCard(tc, isJa)
+                                }
+                            }
+                        </div>
+                    }
+                }
+            }
+            else
+            {
+                <!-- ==================== CONTAINER / ALL CASES VIEW ==================== -->
+                @if (selectedContainer is not null)
+                {
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                        <div>
+                            <h5 class="fw-bold mb-0">
+                                <code>[@selectedContainer.Id]</code> @(isJa ? selectedContainer.Title : selectedContainer.TitleEn)
+                            </h5>
+                            @if (!string.IsNullOrWhiteSpace(selectedContainer.Description))
+                            {
+                                <div class="small text-muted">@selectedContainer.Description</div>
+                            }
+                        </div>
+
+                        @if (selectedContainer.Kind == TestViewpointKind.RequirementTree)
+                        {
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-primary"
+                                    @onclick="() => OpenInWorkbench(selectedContainer.SourceRef)">
+                                Workbench で開く →
+                            </button>
+                        }
+                        else if (selectedContainer.Kind == TestViewpointKind.Journey)
+                        {
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-primary"
+                                    @onclick="() => OpenInJourney(selectedContainer.SourceRef)">
+                                Journey で開く →
+                            </button>
+                        }
+                    </div>
+
+                    @if (selectedContainer.HasEscapeRecords)
+                    {
+                        <div class="escape-box mb-3">
+                            <div class="fw-bold small text-warning-emphasis mb-1">
+                                ⚠ @(isJa ? "手動テスト設計が必要な Escape 要求があります" : "Manual Test Design Required (Escape Records)")
+                            </div>
+                            <div class="small text-dark mb-2">
+                                @(isJa
+                                    ? "以下の要求は自然言語 EscapeRecord のため自動ケース展開の対象外です。QA による手動テスト設計を行ってください。"
+                                    : "The following requirements use free-text EscapeRecords and cannot be auto-derived. Design manual tests.")
+                            </div>
+                            @foreach (var esc in selectedContainer.EscapeRecords)
+                            {
+                                <div class="d-flex align-items-center justify-content-between gap-2 bg-white border rounded p-2 mb-1 small">
+                                    <div>
+                                        <code>@esc.Id</code>
+                                        <span class="badge bg-warning text-dark mx-1">@esc.Reason</span>
+                                        <span class="fw-semibold">[@esc.RequirementId]</span>
+                                        <span>@esc.FreeText</span>
+                                    </div>
+                                    <button type="button"
+                                            class="btn btn-sm btn-link text-decoration-none p-0 flex-shrink-0"
+                                            @onclick="() => OpenInWorkbench(esc.RequirementId)">
+                                        Workbench で開く →
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="mb-2">
+                        <h5 class="fw-bold mb-0">@(isJa ? "全テストケース一覧" : "All Derived Test Cases")</h5>
+                        <div class="small text-muted">
+                            @(isJa
+                                ? "Unit ➔ Component (FSM) ➔ E2E の固定順序で全件展開されています。"
+                                : "All test cases deterministically ordered by Unit -> Component (FSM) -> E2E.")
+                        </div>
+                    </div>
+                }
+
+                @if (filteredCases.Count == 0)
+                {
+                    <div class="slot-card text-center py-4 text-muted small">
+                        @(isJa ? "表示対象のテストケースがありません。フィルタ条件を確認してください。" : "No test cases match the current filters.")
+                    </div>
+                }
+                else
+                {
+                    @foreach (var tc in filteredCases)
+                    {
+                        @RenderTestCaseCard(tc, isJa)
+                    }
+                }
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    private TestSpecificationDocument _spec = new();
+    private TestExportLanguage _language = TestExportLanguage.Japanese;
+    private string? _selectedContainerId;
+    private string? _selectedCellState;
+    private string? _selectedCellEventId;
+
+    // 共通フィルタ
+    private string _filterLevel = string.Empty;
+    private string _filterTechnique = string.Empty;
+    private string _filterOutcome = string.Empty;
+    private bool _showUndefinedNoOpCases = true;
+
+    // FSM マトリクス UI トグル
+    private bool _highlightUndefinedOnly;
+
+    // エクスポートオプション
+    private bool _csvIncludeExecutionColumns;
+    private string _gherkinLevelFilter = string.Empty;
+    private string? _exportFeedback;
+
+    protected override void OnInitialized()
+    {
+        Workspace.OnChange += HandleWorkspaceChanged;
+        RebuildSpecification();
+    }
+
+    private void HandleWorkspaceChanged()
+    {
+        RebuildSpecification();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void RebuildSpecification()
+    {
+        _spec = TestSpecificationGenerator.Generate(Workspace.Document);
+
+        if (_selectedContainerId is not null
+            && !_spec.ViewpointContainers.Any(c => string.Equals(c.Id, _selectedContainerId, StringComparison.Ordinal)))
+        {
+            _selectedContainerId = null;
+            ClearSelectedCell();
+        }
+    }
+
+    private void SelectContainer(string? containerId)
+    {
+        _selectedContainerId = containerId;
+        ClearSelectedCell();
+    }
+
+    private void SelectMatrixCell(string fromState, string eventTermId)
+    {
+        if (string.Equals(_selectedCellState, fromState, StringComparison.Ordinal)
+            && string.Equals(_selectedCellEventId, eventTermId, StringComparison.Ordinal))
+        {
+            ClearSelectedCell();
+            return;
+        }
+
+        _selectedCellState = fromState;
+        _selectedCellEventId = eventTermId;
+    }
+
+    private void ClearSelectedCell()
+    {
+        _selectedCellState = null;
+        _selectedCellEventId = null;
+    }
+
+    private List<DerivedTestCase> ApplyFilters(IReadOnlyList<DerivedTestCase> source)
+    {
+        IEnumerable<DerivedTestCase> query = source;
+
+        if (!_showUndefinedNoOpCases)
+        {
+            query = query.Where(tc => tc.Technique != TestTechnique.InvalidTransition);
+        }
+
+        if (Enum.TryParse<TestLevel>(_filterLevel, out var level))
+        {
+            query = query.Where(tc => tc.TestLevel == level);
+        }
+
+        if (Enum.TryParse<TestTechnique>(_filterTechnique, out var tech))
+        {
+            query = query.Where(tc => tc.Technique == tech);
+        }
+
+        if (Enum.TryParse<ExpectedTestOutcome>(_filterOutcome, out var outcome))
+        {
+            query = query.Where(tc => tc.ExpectedOutcome == outcome);
+        }
+
+        return query.ToList();
+    }
+
+    private bool HasActiveFilters() =>
+        !string.IsNullOrEmpty(_filterLevel)
+        || !string.IsNullOrEmpty(_filterTechnique)
+        || !string.IsNullOrEmpty(_filterOutcome)
+        || !_showUndefinedNoOpCases;
+
+    private void ResetFilters()
+    {
+        _filterLevel = string.Empty;
+        _filterTechnique = string.Empty;
+        _filterOutcome = string.Empty;
+        _showUndefinedNoOpCases = true;
+    }
+
+    private void OpenInWorkbench(string requirementId)
+    {
+        Workspace.SelectRequirement(requirementId);
+        Navigation.NavigateTo("/");
+    }
+
+    private void OpenInJourney(string journeyId)
+    {
+        Workspace.SelectJourney(journeyId);
+        Navigation.NavigateTo("/journey");
+    }
+
+    private string GetDocumentSlug() =>
+        string.IsNullOrWhiteSpace(Workspace.Document.DocumentId)
+            ? "test-spec"
+            : Workspace.Document.DocumentId.ToLowerInvariant();
+
+    private TestLevel? ParseGherkinLevelFilter() =>
+        Enum.TryParse<TestLevel>(_gherkinLevelFilter, out var lvl) ? lvl : null;
+
+    private async Task CopyMarkdown()
+    {
+        var md = MarkdownTestExporter.Export(_spec, _language);
+        await JS.InvokeVoidAsync("reqPipelineV2.copyToClipboard", md);
+        await ShowFeedback("Markdown をコピーしました");
+    }
+
+    private async Task DownloadMarkdown()
+    {
+        var md = MarkdownTestExporter.Export(_spec, _language);
+        var fileName = $"{GetDocumentSlug()}.tests.md";
+        await JS.InvokeVoidAsync("reqPipelineV2.downloadTextFile", fileName, md, "text/markdown;charset=utf-8");
+        await ShowFeedback($"{fileName} をダウンロードしました");
+    }
+
+    private async Task DownloadCsv()
+    {
+        var bytes = CsvTestExporter.ExportUtf8BomBytes(_spec, _csvIncludeExecutionColumns, _language);
+        var base64 = Convert.ToBase64String(bytes);
+        var fileName = $"{GetDocumentSlug()}.tests.csv";
+        await JS.InvokeVoidAsync("reqPipelineV2.downloadBase64File", fileName, base64, "text/csv;charset=utf-8");
+        await ShowFeedback($"{fileName} をダウンロードしました");
+    }
+
+    private async Task CopyGherkin()
+    {
+        var feature = GherkinTestExporter.Export(_spec, _language, ParseGherkinLevelFilter());
+        await JS.InvokeVoidAsync("reqPipelineV2.copyToClipboard", feature);
+        await ShowFeedback("Gherkin をコピーしました");
+    }
+
+    private async Task DownloadGherkin()
+    {
+        var levelFilter = ParseGherkinLevelFilter();
+        var feature = GherkinTestExporter.Export(_spec, _language, levelFilter);
+        var suffix = levelFilter is null ? string.Empty : $".{levelFilter.Value.ToString().ToLowerInvariant()}";
+        var fileName = $"{GetDocumentSlug()}{suffix}.feature";
+        await JS.InvokeVoidAsync("reqPipelineV2.downloadTextFile", fileName, feature, "text/plain;charset=utf-8");
+        await ShowFeedback($"{fileName} をダウンロードしました");
+    }
+
+    private async Task ShowFeedback(string message)
+    {
+        _exportFeedback = message;
+        StateHasChanged();
+        await Task.Delay(2500);
+        if (_exportFeedback == message)
+        {
+            _exportFeedback = null;
+            StateHasChanged();
+        }
+    }
+
+    private RenderFragment RenderTestCaseCard(DerivedTestCase tc, bool isJa) => __builder =>
+    {
+        var cardClass = tc.ExpectedOutcome switch
+        {
+            ExpectedTestOutcome.Blocked => "tc-card tc-card-blocked",
+            ExpectedTestOutcome.NoOp => "tc-card tc-card-noop",
+            ExpectedTestOutcome.AlternativeFired => "tc-card tc-card-alt",
+            _ => "tc-card"
+        };
+
+        <div class="@cardClass">
+            <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
+                <div>
+                    <div class="d-flex align-items-center flex-wrap gap-1 mb-1">
+                        <code class="fw-bold text-dark">@tc.TestCaseId</code>
+                        <span class="badge @GetLevelBadgeClass(tc.TestLevel)">@tc.TestLevel</span>
+                        <span class="badge bg-light text-dark border">@tc.Technique</span>
+                        <span class="badge @GetOutcomeBadgeClass(tc.ExpectedOutcome)">@tc.ExpectedOutcome</span>
+                        @if (tc.Tags.Any(t => string.Equals(t, "@safety", StringComparison.Ordinal)))
+                        {
+                            <span class="badge bg-danger">@("@safety")</span>
+                        }
+                    </div>
+                    <div class="fw-semibold small">@(isJa ? tc.Title : tc.TitleEn)</div>
+                </div>
+
+                <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                    @if (tc.TestLevel == TestLevel.E2E)
+                    {
+                        <button type="button"
+                                class="btn btn-sm btn-link text-decoration-none p-0"
+                                @onclick="() => OpenInJourney(tc.SourceRef)">
+                            Journey で開く →
+                        </button>
+                    }
+                    else if (tc.TestLevel == TestLevel.Unit)
+                    {
+                        <button type="button"
+                                class="btn btn-sm btn-link text-decoration-none p-0"
+                                @onclick="() => OpenInWorkbench(tc.SourceRef)">
+                            Workbench で開く →
+                        </button>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(tc.CompositeId))
+                    {
+                        <button type="button"
+                                class="btn btn-sm btn-link text-decoration-none p-0"
+                                @onclick="() => OpenInWorkbench(tc.CompositeId)">
+                            Workbench で開く →
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="tc-gwt-grid">
+                <div class="tc-gwt-label">Given</div>
+                <div>
+                    @if (tc.GivenConditions.Count == 0)
+                    {
+                        <span class="text-muted">-</span>
+                    }
+                    else
+                    {
+                        <div class="d-flex flex-wrap gap-1">
+                            @foreach (var cond in tc.GivenConditions)
+                            {
+                                <span class="badge bg-light text-dark border fw-normal">
+                                    @(isJa ? cond.LabelJa : cond.LabelEn) = <strong>@(isJa ? cond.ValueLabelJa : cond.ValueLabelEn)</strong>
+                                </span>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div class="tc-gwt-label">When</div>
+                <div>
+                    @if (tc.WhenSteps.Count == 1)
+                    {
+                        <span>@(isJa ? tc.WhenSteps[0].ActionTextJa : tc.WhenSteps[0].ActionTextEn)</span>
+                    }
+                    else
+                    {
+                        <ol class="mb-0 ps-3">
+                            @foreach (var step in tc.WhenSteps)
+                            {
+                                <li>@(isJa ? step.ActionTextJa : step.ActionTextEn)</li>
+                            }
+                        </ol>
+                    }
+                </div>
+
+                <div class="tc-gwt-label">Then</div>
+                <div class="fw-semibold text-dark" style="white-space: pre-line;">@(isJa ? tc.ThenTextJa : tc.ThenTextEn)</div>
+            </div>
+
+            @{
+                var note = isJa ? tc.ReviewNoteJa : tc.ReviewNoteEn;
+            }
+            @if (!string.IsNullOrWhiteSpace(note))
+            {
+                <div class="mt-2 px-2 py-1 rounded bg-warning-subtle text-warning-emphasis small">
+                    <strong>ReviewNote:</strong> @note
+                </div>
+            }
+        </div>
+    };
+
+    private static string GetMatrixCellClass(MatrixCell cell) => cell.Classification switch
+    {
+        MatrixCellKind.ValidTransition => "matrix-cell-valid",
+        MatrixCellKind.ConditionalTransition => "matrix-cell-conditional",
+        MatrixCellKind.ExplicitProhibit => "matrix-cell-prohibit",
+        MatrixCellKind.UndefinedNoOp => "matrix-cell-undefined",
+        _ => "matrix-cell-undefined"
+    };
+
+    private static string FormatMatrixCellBadge(MatrixCell cell, bool isJa)
+    {
+        var targets = isJa ? cell.TargetStateLabels : cell.TargetStates;
+        var targetText = targets.Count > 0
+            ? $"➔ {string.Join(", ", targets)}"
+            : (isJa ? "⚡ アクション" : "⚡ Action");
+
+        return cell.Classification switch
+        {
+            MatrixCellKind.ValidTransition => targetText,
+            MatrixCellKind.ConditionalTransition => cell.HasProhibit
+                ? (isJa ? $"{targetText} (条件あり) / ⛔ ブロック" : $"{targetText} (Cond.) / ⛔ Blocked")
+                : (isJa ? $"{targetText} (条件あり)" : $"{targetText} (Cond.)"),
+            MatrixCellKind.ExplicitProhibit => isJa ? "⛔ ブロック" : "⛔ Blocked",
+            MatrixCellKind.UndefinedNoOp => isJa ? "— 未定義" : "— Undefined",
+            _ => "-"
+        };
+    }
+
+    private static string GetLevelBadgeClass(TestLevel level) => level switch
+    {
+        TestLevel.Unit => "bg-primary",
+        TestLevel.Component => "bg-info text-dark",
+        TestLevel.E2E => "bg-dark",
+        _ => "bg-secondary"
+    };
+
+    private static string GetOutcomeBadgeClass(ExpectedTestOutcome outcome) => outcome switch
+    {
+        ExpectedTestOutcome.StateChanged => "bg-success",
+        ExpectedTestOutcome.ActionEmitted => "bg-primary-subtle text-primary",
+        ExpectedTestOutcome.Blocked => "bg-danger",
+        ExpectedTestOutcome.AlternativeFired => "bg-info text-dark",
+        ExpectedTestOutcome.NoOp => "bg-secondary",
+        _ => "bg-secondary"
+    };
+
+    public void Dispose()
+    {
+        Workspace.OnChange -= HandleWorkspaceChanged;
+    }
+}

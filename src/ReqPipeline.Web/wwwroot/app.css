@@ -375,3 +375,215 @@ html, body {
     font-weight: 600;
     color: #1e293b;
 }
+
+/* ==================== Test View (/tests) ==================== */
+.testview-shell {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 56px);
+    overflow: hidden;
+}
+
+.testview-topbar {
+    background: #ffffff;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0.65rem 1.15rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    flex-shrink: 0;
+}
+
+.testview-grid {
+    display: grid;
+    grid-template-columns: 320px minmax(0, 1fr);
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+@media (max-width: 992px) {
+    .testview-shell {
+        height: auto;
+        overflow: visible;
+    }
+    .testview-grid {
+        grid-template-columns: minmax(0, 1fr);
+        overflow: visible;
+    }
+}
+
+.tv-stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.22rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid #e2e8f0;
+}
+
+.tv-stat-ok {
+    background: #dcfce7;
+    color: #15803d;
+    border-color: #bbf7d0;
+}
+
+.tv-stat-warn {
+    background: #fef3c7;
+    color: #b45309;
+    border-color: #fde68a;
+}
+
+.tv-stat-info {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border-color: #bfdbfe;
+}
+
+/* 2D Interactive State Transition Matrix */
+.fsm-matrix-scroll {
+    overflow-x: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.fsm-matrix-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin-bottom: 0;
+    font-size: 0.8rem;
+}
+
+.fsm-matrix-table th,
+.fsm-matrix-table td {
+    border-right: 1px solid #e2e8f0;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0.5rem 0.6rem;
+    vertical-align: middle;
+}
+
+.fsm-matrix-table thead th {
+    background: #f8fafc;
+    color: #334155;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.fsm-matrix-sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: #ffffff;
+    box-shadow: 2px 0 4px rgba(15, 23, 42, 0.05);
+    min-width: 150px;
+}
+
+.fsm-matrix-table thead .fsm-matrix-sticky-col {
+    background: #f1f5f9;
+    z-index: 3;
+}
+
+.matrix-cell-btn {
+    width: 100%;
+    min-width: 150px;
+    text-align: left;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0.42rem 0.55rem;
+    font-size: 0.77rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.12s ease, opacity 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.matrix-cell-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+}
+
+.matrix-cell-valid {
+    background: #eff6ff;
+    border-color: #93c5fd;
+    color: #1d4ed8;
+}
+
+.matrix-cell-conditional {
+    background: #ecfeff;
+    border-color: #67e8f9;
+    color: #0e7490;
+}
+
+.matrix-cell-prohibit {
+    background: #fef2f2;
+    border-color: #fca5a5;
+    color: #b91c1c;
+}
+
+.matrix-cell-undefined {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    border-style: dashed;
+    color: #64748b;
+}
+
+.matrix-cell-dimmed {
+    opacity: 0.24;
+}
+
+.matrix-cell-selected {
+    outline: 2px solid #2563eb;
+    outline-offset: 1px;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+
+.tc-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-left: 4px solid #3b82f6;
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.tc-card-blocked {
+    border-left-color: #dc2626;
+    background: #fffafa;
+}
+
+.tc-card-noop {
+    border-left-color: #94a3b8;
+    background: #f8fafc;
+}
+
+.tc-card-alt {
+    border-left-color: #0891b2;
+}
+
+.tc-gwt-grid {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 0.3rem 0.6rem;
+    font-size: 0.82rem;
+    margin-top: 0.5rem;
+}
+
+.tc-gwt-label {
+    font-weight: 700;
+    color: #475569;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding-top: 0.1rem;
+}

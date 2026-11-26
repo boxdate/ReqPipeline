@@ -1,4 +1,4 @@
-# ReqPipeline V2
+# ReqPipeline V2.0.0
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Blazor](https://img.shields.io/badge/Blazor-Interactive_Server-512BD4.svg)](https://dotnet.microsoft.com/apps/aspnet/web-apps/blazor)
@@ -7,9 +7,9 @@
 [🇺🇸 Read this in English](README.md)
 [🇯🇵 Read this in Japanese](README_ja.md)
 
-**ReqPipeline V2** は、**USDM**・**EARS**・**ユーザー定義 Behavior Catalog**・**FSM 解析**・**Journey シミュレーション**を組み合わせた、決定論的な要求仕様ワークベンチ＆静的検証エンジンです。
+**ReqPipeline V2.0.0** は、**USDM**・**EARS**・**ユーザー定義 Behavior Catalog**・**FSM 解析**・**Journey シミュレーション**・**Test View（テストケース決定論的導出）**を組み合わせた、決定論的な要求仕様ワークベンチ＆静的検証エンジンです。
 
-自然言語の仕様書で見落とされがちな論理矛盾・前提条件の抜け・到達不能状態や行き止まり状態・シナリオの断絶を、コードを1行も書く前に **100%決定論的** に検知します。
+自然言語の仕様書で見落とされがちな論理矛盾・前提条件の抜け・到達不能状態や行き止まり状態・シナリオの断絶をコードを1行も書く前に **100%決定論的** に検知し、さらに単一の正本から **Unit / Component (FSM) / E2E** のテスト仕様を自動展開して **Gherkin (`.feature`) / CSV（UTF-8 BOM・RFC 4180） / Markdown** の 3 形式でエクスポートできます。
 
 ![ReqPipeline デモンストレーション](docs/images/demo_v2.gif)
 
@@ -31,7 +31,17 @@
    * **`GraphLinter` (`LINT-001` 〜 `LINT-013`)**: 参照整合性、概念型および `AllowedTargetTypes` 一致、値ドメイン閉包、必須スロット整合性・自己禁止防止、前提条件の同時成立性を考慮した要求衝突検知（`LINT-008`: `Prohibit`＋`ProhibitedToValue` との矛盾・`MutateState` 遷移先競合）、FSM 完全性警告（`LINT-012`）、語彙規約・禁止語・未使用語彙検知（`LINT-009`〜`LINT-011`, `LINT-013`）を実行します。
    * **`FsmGraphBuilder` & `FsmMermaidRenderer`**: `LifecycleState` ごとに状態遷移グラフを構築し、到達不能状態や行き止まり（Dead-end）を自動検出して Mermaid 描画します。
    * **`JourneySimulator`**: 初期状態（`InitialStates`）から複数ステップを順に評価し、前提条件不一致（`PreconditionFailed`）、遷移元不一致（`StateMismatch`）、禁止ルール発動（`Blocked`）を決定論的に検証します。
+   * **`TestSpecificationGenerator` & 3形式エクスポーター（`Gherkin` / `CSV` / `Markdown`）**: 全要求再評価ロジックを用いた Unit（正常発火・1条件反転・禁止ブロック＆解除対照）、Component（2次元状態遷移マトリクス）、E2E（Journey 通し検証）のテストケースを、ズレない自然キー ID で決定論的に導出します。
    * **日英 EARS / USDM レンダラ**: 単一の正本 JSON から日本語 EARS・英語 Canonical EARS・階層化 USDM Markdown を自動生成します。
+
+### 全体ワークフロー（`WDD ➔ Glossary ➔ ReqPipeline V2 ➔ Test View`）
+
+ReqPipeline V2.0.0 では、人間のテスト要求分析とツールの決定論的展開の責務を明確に分離しています。
+
+1. **WDD / 上流発散（人間）**: 受け入れ（達成）基準や QA の *What if*、非機能・環境・時相観点を洗い出し、`Rationale → 親要求 (CompositeRequirement)` の観点コンテナとして整理します。
+2. **Glossary & BehaviorCatalog**: 閉じた語彙ドメイン（`Boolean` / `Enum`）、日本語表示ラベル、およびドメイン固有動詞（`SemanticEffect`）を確定します。
+3. **ReqPipeline V2 Workbench（`GraphLinter` / `FSM` / `Journey`）**: `AtomicRequirement` を構造化入力し、矛盾・遷移漏れ・シナリオ断絶を静的に解消します。
+4. **Test View (`/tests`)**: 観点コンテナ・2次元状態遷移マトリクス・E2E ジャーニーから論理空間のテストケースを全件自動展開し、モデル外の `EscapeRecord` を「手動テスト設計要」として明示したうえで **Gherkin / CSV / Markdown** へ出力します。
 
 ---
 
@@ -65,7 +75,7 @@ dotnet run --project src/ReqPipeline.Web
 
 ## 基本的な使い方 (Blazor Workbench)
 
-画面上部ヘッダーには 6 つのビュー切り替えタブ、リアルタイムの `Errors` / `Warnings` バッジ、**サンプル切替（`CRUD` / `DoorLock`）**、**JSON Import / Export** があります。
+画面上部ヘッダーには 7 つのビュー切り替えタブ、リアルタイムの `Errors` / `Warnings` バッジ、**サンプル切替（`CRUD` / `DoorLock`）**、**JSON Import / Export** があります。
 
 1. **Workbench (`/`)**:
    * 左ペイン: `Rationale → 親要求 (Composite) → 子要求 (Atomic)` の階層ツリー。
@@ -81,6 +91,10 @@ dotnet run --project src/ReqPipeline.Web
    * `LifecycleState` ごとの Mermaid `stateDiagram-v2` 図と、各状態の到達性・Dead-end・入出力遷移数を可視化します。
 6. **Journey (`/journey`)**:
    * 初期状態とステップ列を定義し、正常系（`Passed`）および安全インターロック・禁止ルール（`Blocked`）をステップごとにウォークスルー検証できます。
+7. **Test View (`/tests`)**:
+   * 左ペイン: テスト観点コンテナツリー（「すべて表示」、`EscapeRecord` 手動設計要バッジ付き `Rationale → CompositeRequirement`、`FSM 状態遷移マトリクス`［未定義セル数バッジ］、`E2E シナリオ`）。
+   * 右ペイン: 外部ライブラリ不要のインタラクティブ 2 次元状態遷移マトリクス（4分類色分け＆`HasProhibit` 共存バッジ、「未定義セルのみハイライト」トグル、セルクリックでの詳細パネル展開）、共通フィルタバー、および元の `REQ-xxx` / `JRN-xxx` へ直行できる `Workbench で開く →` / `Journey で開く →` リンク。
+   * 上部サマリー＆エクスポートバー: 観点コンテナ数・総ケース数・Atomic 要求カバレッジ率・未定義セル数・Escape 要手動確認数のバッジ、日英表示/出力切替、および 3 形式エクスポート（**Markdown** コピー/DL、**CSV**［UTF-8 BOM・実行列オプション付き］DL、**Gherkin `.feature`**［レベル選択付き］コピー/DL）。
 
 ---
 
@@ -97,9 +111,9 @@ dotnet run --project src/ReqPipeline.Web
 
 ## プロジェクト構成
 
-* `src/ReqPipeline.Core/`: V2 ドメイン AST（`KnowledgeGraphDocument`, `BehaviorCatalogModels`）、`GraphLinter`、`FsmGraphBuilder`、`JourneySimulator`、各種レンダラ。
-* `src/ReqPipeline.Web/`: Blazor Interactive Server ワークベンチ（`Home`, `GlossaryEditor`, `BehaviorsEditor`, `UsdmView`, `FsmView`, `JourneyView`）。
-* `tests/ReqPipeline.UnitTests/`: `GraphLinter`・`FsmGraphBuilder`・`JourneySimulator`・両サンプルデータセットの xUnit テスト。
+* `src/ReqPipeline.Core/`: V2 ドメイン AST（`KnowledgeGraphDocument`, `BehaviorCatalogModels`）、`GraphLinter`、`FsmGraphBuilder`、`JourneySimulator`、`Testing`（`TestSpecificationGenerator`, `GherkinTestExporter`, `CsvTestExporter`, `MarkdownTestExporter`）、各種レンダラ。
+* `src/ReqPipeline.Web/`: Blazor Interactive Server ワークベンチ（`Home`, `GlossaryEditor`, `BehaviorsEditor`, `UsdmView`, `FsmView`, `JourneyView`, `TestView`）。
+* `tests/ReqPipeline.UnitTests/`: `GraphLinter`・`FsmGraphBuilder`・`JourneySimulator`・`TestSpecificationGenerator` ＆ 3形式エクスポーター・両サンプルデータセットの xUnit テスト。
 * `samples/`: V2 サンプル正本 JSON（`crud-sample.v2.json`, `doorlock-sample.v2.json`）。
 * `docs/requirements_dev/`: V2 設計メモおよび実装仕様書。
 * `src/ReqPipeline.Linter/`: V1 の CLI プロトタイプ（任意で Ollama LLM 連携を行う旧 CLI）。
