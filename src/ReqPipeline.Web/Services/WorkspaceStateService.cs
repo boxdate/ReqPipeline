@@ -12,6 +12,7 @@ public sealed class WorkspaceStateService
     public IReadOnlyList<LintDiagnostic> Diagnostics { get; private set; } = [];
     public string? SelectedRequirementId { get; private set; }
     public string? SelectedRationaleId { get; private set; }
+    public string? SelectedJourneyId { get; private set; }
     public string? LastErrorMessage { get; private set; }
     public string ActiveSampleKey { get; private set; } = "crud";
 
@@ -101,6 +102,12 @@ public sealed class WorkspaceStateService
     {
         SelectedRationaleId = rationaleId;
         SelectedRequirementId = null;
+        OnChange?.Invoke();
+    }
+
+    public void SelectJourney(string? journeyId)
+    {
+        SelectedJourneyId = journeyId;
         OnChange?.Invoke();
     }
 

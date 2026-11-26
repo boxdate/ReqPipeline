@@ -381,6 +381,10 @@
     protected override void OnInitialized()
     {
         Workspace.OnChange += HandleWorkspaceChanged;
+        if (!string.IsNullOrWhiteSpace(Workspace.SelectedJourneyId))
+        {
+            _selectedJourneyId = Workspace.SelectedJourneyId;
+        }
         EnsureSelectedJourney();
     }
 
