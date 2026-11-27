@@ -34,6 +34,14 @@ public sealed class GraphLinter
     public const string RuleFsmCompleteness = "LINT-012";
     public const string RuleUnusedGlossaryTerm = "LINT-013";
 
+    public const string RuleAcMissingRationale = "AC-ERR-001";
+    public const string RuleAcMissingComposite = "AC-ERR-002";
+    public const string RuleAcMissingJourney = "AC-ERR-003";
+    public const string RuleAcInvalidIdentityOrTitle = "AC-ERR-004";
+    public const string RuleAcNoLinkedComposite = "AC-WARN-001";
+    public const string RuleAcNoVerification = "AC-WARN-002";
+    public const string RuleCompositeUnassignedToAc = "AC-WARN-003";
+
     private static readonly Regex AsciiSymbolRegex = new("^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.Compiled);
 
     public static List<LintDiagnostic> Lint(KnowledgeGraphDocument document)
@@ -129,6 +137,7 @@ public sealed class GraphLinter
         ValidateDeprecatedLabelUsage(document, diagnostics);
         ValidateFsmCompleteness(document, diagnostics);
         ValidateUnusedGlossaryTerms(document, diagnostics);
+        ValidateAchievementCriteria(document, rationalesById, requirementsById, diagnostics);
 
         return diagnostics;
     }
@@ -901,6 +910,135 @@ public sealed class GraphLinter
                     RuleUnusedGlossaryTerm,
                     term.Id,
                     $"Glossary term '{term.Id}' ('{term.CanonicalName}') is not referenced by any requirement."));
+            }
+        }
+    }
+
+    private static void ValidateAchievementCriteria(
+        KnowledgeGraphDocument document,
+        Dictionary<string, RationaleNode> rationalesById,
+        Dictionary<string, CanonicalRequirementNode> requirementsById,
+        List<LintDiagnostic> diagnostics)
+    {
+        if (document.AchievementCriteria.Count == 0)
+        {
+            return;
+        }
+
+        var journeysById = new Dictionary<string, UserJourney>(StringComparer.Ordinal);
+        foreach (var journey in document.Journeys)
+        {
+            if (!string.IsNullOrWhiteSpace(journey.Id))
+            {
+                journeysById.TryAdd(journey.Id, journey);
+            }
+        }
+
+        var seenAcIds = new HashSet<string>(StringComparer.Ordinal);
+        var referencedCompositeIds = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var i = 0; i < document.AchievementCriteria.Count; i++)
+        {
+            var ac = document.AchievementCriteria[i];
+            var targetId = string.IsNullOrWhiteSpace(ac.Id) ? $"AC[index:{i}]" : ac.Id;
+
+            if (string.IsNullOrWhiteSpace(ac.Id))
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Error,
+                    RuleAcInvalidIdentityOrTitle,
+                    targetId,
+                    $"AchievementCriterion at index {i} has an empty Id."));
+            }
+            else if (!seenAcIds.Add(ac.Id))
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Error,
+                    RuleAcInvalidIdentityOrTitle,
+                    ac.Id,
+                    $"Duplicate AchievementCriterion Id '{ac.Id}'."));
+            }
+
+            if (string.IsNullOrWhiteSpace(ac.Title))
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Error,
+                    RuleAcInvalidIdentityOrTitle,
+                    targetId,
+                    $"AchievementCriterion '{targetId}' must specify a non-empty Title."));
+            }
+
+            if (string.IsNullOrWhiteSpace(ac.RationaleId) || !rationalesById.ContainsKey(ac.RationaleId))
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Error,
+                    RuleAcMissingRationale,
+                    targetId,
+                    $"AchievementCriterion '{targetId}' references missing or empty RationaleId '{ac.RationaleId}'."));
+            }
+
+            if (ac.LinkedCompositeIds.Count == 0)
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Warning,
+                    RuleAcNoLinkedComposite,
+                    targetId,
+                    $"AchievementCriterion '{targetId}' has no LinkedCompositeIds (realization gap)."));
+            }
+            else
+            {
+                foreach (var compId in ac.LinkedCompositeIds)
+                {
+                    if (string.IsNullOrWhiteSpace(compId)
+                        || !requirementsById.TryGetValue(compId, out var req)
+                        || req.NodeKind != RequirementNodeKind.Composite)
+                    {
+                        diagnostics.Add(new LintDiagnostic(
+                            LintSeverity.Error,
+                            RuleAcMissingComposite,
+                            targetId,
+                            $"AchievementCriterion '{targetId}' references unknown or non-Composite requirement '{compId}'."));
+                    }
+                    else
+                    {
+                        referencedCompositeIds.Add(compId);
+                    }
+                }
+            }
+
+            if (ac.LinkedJourneyIds.Count == 0 && string.IsNullOrWhiteSpace(ac.ManualVerificationNote))
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Warning,
+                    RuleAcNoVerification,
+                    targetId,
+                    $"AchievementCriterion '{targetId}' has neither LinkedJourneyIds nor ManualVerificationNote (verification gap)."));
+            }
+
+            foreach (var journeyId in ac.LinkedJourneyIds)
+            {
+                if (string.IsNullOrWhiteSpace(journeyId) || !journeysById.ContainsKey(journeyId))
+                {
+                    diagnostics.Add(new LintDiagnostic(
+                        LintSeverity.Error,
+                        RuleAcMissingJourney,
+                        targetId,
+                        $"AchievementCriterion '{targetId}' references unknown Journey '{journeyId}'."));
+                }
+            }
+        }
+
+        foreach (var req in document.Requirements)
+        {
+            if (req.NodeKind == RequirementNodeKind.Composite
+                && !string.IsNullOrWhiteSpace(req.Id)
+                && !referencedCompositeIds.Contains(req.Id))
+            {
+                diagnostics.Add(new LintDiagnostic(
+                    LintSeverity.Warning,
+                    RuleCompositeUnassignedToAc,
+                    req.Id,
+                    $"Composite requirement '{req.Id}' is not linked to any AchievementCriterion."));
             }
         }
     }
