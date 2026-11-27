@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "2.0",
+  "schemaVersion": "2.1",
   "documentId": "DOC-CRUD-001",
   "title": "顧客管理CRUDアプリケーション要件仕様",
   "description": "顧客情報の作成・一覧表示・詳細遷移および管理者以外の削除禁止を定義するV2正本サンプル。",
@@ -568,6 +568,27 @@
           "requirementRef": "REQ-001-8"
         }
       ]
+    }
+  ],
+  "achievementCriteria": [
+    {
+      "id": "AC-001",
+      "rationaleId": "RAT-001",
+      "title": "顧客情報の登録・閲覧・編集と画面遷移の正常動作",
+      "description": "利用者が一覧画面から新規顧客の登録・一覧確認・詳細閲覧・編集および一覧復帰までの一連のCRUD操作を迷わず完了できること。",
+      "linkedCompositeIds": ["REQ-001"],
+      "linkedJourneyIds": ["JRN-001"],
+      "viewpointTags": ["正", "画面遷移"]
+    },
+    {
+      "id": "AC-002",
+      "rationaleId": "RAT-002",
+      "title": "権限に基づく顧客削除保護と安全な画面復帰",
+      "description": "管理者以外の利用者による顧客削除操作が確実にブロックされ、ブロック後も一覧画面への安全な操作継続ができること。",
+      "linkedCompositeIds": ["REQ-002"],
+      "linkedJourneyIds": ["JRN-002"],
+      "viewpointTags": ["禁", "権限"],
+      "manualVerificationNote": "URL直打ちやAPI直接呼び出しで一般メンバー・閲覧者が削除エンドポイントを実行した場合も403で拒否されることを手動確認する。"
     }
   ]
 }

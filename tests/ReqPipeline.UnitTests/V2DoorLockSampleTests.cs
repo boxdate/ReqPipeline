@@ -28,13 +28,14 @@ public class V2DoorLockSampleTests
     {
         var doc = KnowledgeGraphDocument.FromJson(File.ReadAllText(GetSamplePath()));
 
-        Assert.Equal("2.0", doc.SchemaVersion);
+        Assert.Equal("2.1", doc.SchemaVersion);
         Assert.Equal("DOC-DOORLOCK-001", doc.DocumentId);
         Assert.Equal(3, doc.Rationales.Count);
         Assert.Equal(11, doc.Glossary.Count);
         Assert.Equal(5, doc.BehaviorCatalog.Count);
         Assert.Equal(9, doc.Requirements.Count);
         Assert.Equal(2, doc.Journeys.Count);
+        Assert.Equal(3, doc.AchievementCriteria.Count);
 
         var verbIds = doc.BehaviorCatalog.Select(b => b.BehaviorDefId).ToHashSet(StringComparer.Ordinal);
         Assert.Contains("BEH-LOCK", verbIds);

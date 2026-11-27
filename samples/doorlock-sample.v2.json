@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "2.0",
+  "schemaVersion": "2.1",
   "documentId": "DOC-DOORLOCK-001",
   "title": "車両ドアロック＆警告制御システム要件仕様",
   "description": "車載ドアロック制御ECUにおける施錠・解錠遷移、半ドア／走行中インターロック、アンサーバック鳴動および故障コード記録を定義する多ドメイン検証サンプル。",
@@ -443,6 +443,37 @@
           "requirementRef": "REQ-002-2"
         }
       ]
+    }
+  ],
+  "achievementCriteria": [
+    {
+      "id": "AC-001",
+      "rationaleId": "RAT-001",
+      "title": "通常施錠・解錠とアンサーバック通知の確実な動作",
+      "description": "全閉状態での施錠・停車中での解錠が即座に遷移し、施錠完了時にアンサーバックブザーが鳴動すること。",
+      "linkedCompositeIds": ["REQ-001"],
+      "linkedJourneyIds": ["JRN-001"],
+      "viewpointTags": ["正", "通知"]
+    },
+    {
+      "id": "AC-002",
+      "rationaleId": "RAT-002",
+      "title": "半ドア・走行中の誤操作に対する安全インターロック",
+      "description": "半ドア中の施錠および走行中の解錠操作が確実にインターロックされ、通常施錠・解錠制御と競合しないこと。",
+      "linkedCompositeIds": ["REQ-002", "REQ-001"],
+      "linkedJourneyIds": ["JRN-002"],
+      "viewpointTags": ["禁", "安全", "物理:連打"],
+      "manualVerificationNote": "施錠・解錠スイッチの同時押しおよびチャタリング（50ms未満の連打）時に誤遷移や異常鳴動が発生しないことを実機ベンチで確認する。"
+    },
+    {
+      "id": "AC-003",
+      "rationaleId": "RAT-003",
+      "title": "故障検知時のフェールセーフ・診断コード記録",
+      "description": "ロック異常検知イベント発生時に、故障コード(DTC)が確実に不揮発メモリへ記録され整備時に参照できること。",
+      "linkedCompositeIds": ["REQ-003"],
+      "linkedJourneyIds": [],
+      "viewpointTags": ["異", "保守"],
+      "manualVerificationNote": "アクチュエータ固着模擬環境で異常検知を発生させ、IG-OFF/ON後も診断ツールからDTCが読み出せることを実機確認する。"
     }
   ]
 }

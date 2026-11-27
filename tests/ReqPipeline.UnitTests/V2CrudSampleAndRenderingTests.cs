@@ -28,13 +28,14 @@ public class V2CrudSampleAndRenderingTests
         var rawJson = File.ReadAllText(GetSamplePath());
         var doc = KnowledgeGraphDocument.FromJson(rawJson);
 
-        Assert.Equal("2.0", doc.SchemaVersion);
+        Assert.Equal("2.1", doc.SchemaVersion);
         Assert.Equal("DOC-CRUD-001", doc.DocumentId);
         Assert.Equal(2, doc.Rationales.Count);
         Assert.Equal(15, doc.Glossary.Count);
         Assert.Equal(6, doc.BehaviorCatalog.Count);
         Assert.Equal(11, doc.Requirements.Count);
         Assert.Equal(2, doc.Journeys.Count);
+        Assert.Equal(2, doc.AchievementCriteria.Count);
 
         var serialized = doc.ToJson();
         Assert.Contains("\"conceptType\": \"LifecycleState\"", serialized);
@@ -50,6 +51,7 @@ public class V2CrudSampleAndRenderingTests
         Assert.Equal(doc.BehaviorCatalog.Count, roundTripped.BehaviorCatalog.Count);
         Assert.Equal(doc.Requirements.Count, roundTripped.Requirements.Count);
         Assert.Equal(doc.Journeys.Count, roundTripped.Journeys.Count);
+        Assert.Equal(doc.AchievementCriteria.Count, roundTripped.AchievementCriteria.Count);
     }
 
     [Fact]
