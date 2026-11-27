@@ -1346,3 +1346,96 @@ hr {
     background: var(--surface-app);
     border-top: 1px solid var(--border-subtle);
 }
+
+/* ==================== AC Editor & Lateral Impact ==================== */
+.wb-mode-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    padding-bottom: 0.75rem;
+    margin-bottom: 0.9rem;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.v2-checklist-scroll {
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--surface-app);
+    padding: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.v2-checklist-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.42rem 0.58rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    background: var(--surface-card);
+    cursor: pointer;
+    font-size: 0.81rem;
+    transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.v2-checklist-item:hover {
+    border-color: var(--border-strong);
+}
+
+.v2-checklist-item.checked {
+    border-color: var(--cud-primary-border);
+    background: var(--cud-primary-bg);
+}
+
+.v2-lateral-badge {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.32rem;
+    padding: 0.24rem 0.62rem;
+    border-radius: var(--radius-sm);
+    border: 1px dashed var(--cud-warning-accent);
+    background: var(--cud-warning-bg);
+    color: var(--cud-warning-fg);
+    font-size: 0.76rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.v2-lateral-badge:hover {
+    border-style: solid;
+    background: #FEF3C7;
+}
+
+.v2-manual-note-card {
+    background: var(--surface-app);
+    border: 1px solid var(--cud-warning-border);
+    border-left: 3px solid var(--cud-warning-accent);
+    border-radius: var(--radius-sm);
+    padding: 0.65rem 0.85rem;
+}
+
+.tree-node-btn-warn {
+    border-color: var(--cud-warning-border);
+    background: var(--cud-warning-bg);
+    color: var(--cud-warning-fg);
+}
+
+.tree-node-btn-warn:hover {
+    background: #FEF3C7;
+}
+
+.tree-node-btn-warn.selected {
+    background: var(--cud-warning-bg);
+    border-color: var(--cud-warning-accent);
+    color: var(--cud-warning-fg);
+    box-shadow: inset 3px 0 0 var(--cud-warning-accent);
+}

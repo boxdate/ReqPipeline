@@ -5,12 +5,17 @@
 
 <PageTitle>Workbench - ReqPipeline V2</PageTitle>
 
+@{
+    var isAcMode = string.Equals(Workspace.WorkbenchMode, "ac", StringComparison.Ordinal);
+    var selectedAc = Workspace.GetSelectedAc();
+}
+
 <div class="wb-grid">
     <!-- ==================== LEFT PANE: TREE ==================== -->
     <aside class="wb-pane wb-pane-left">
         <div class="d-flex align-items-center justify-content-between mb-2 gap-1">
             <div style="min-width: 0;">
-                <div class="wb-section-title mb-0">Knowledge Graph Tree</div>
+                <div class="wb-section-title mb-0">@(isAcMode ? "Rationale & AC Tree" : "Knowledge Graph Tree")</div>
                 <div class="fw-bold small text-truncate v2-text-primary" title="@Workspace.Document.Title">
                     @Workspace.Document.Title
                 </div>
@@ -21,22 +26,92 @@
                     <UiIcon Name="plus" Size="12" />
                     <span>理由</span>
                 </button>
-                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline-primary" title="親要求を追加"
-                        @onclick="() => Workspace.AddCompositeRequirement()">
-                    <UiIcon Name="plus" Size="12" />
-                    <span>親要求</span>
-                </button>
+                @if (isAcMode)
+                {
+                    <button type="button" class="v2-btn v2-btn-xs v2-btn-outline-primary" title="達成基準 (AC) を追加"
+                            @onclick="() => Workspace.AddAchievementCriterion()">
+                        <UiIcon Name="plus" Size="12" />
+                        <span>AC</span>
+                    </button>
+                }
+                else
+                {
+                    <button type="button" class="v2-btn v2-btn-xs v2-btn-outline-primary" title="親要求を追加"
+                            @onclick="() => Workspace.AddCompositeRequirement()">
+                        <UiIcon Name="plus" Size="12" />
+                        <span>親要求</span>
+                    </button>
+                }
             </div>
         </div>
 
         <hr class="my-2" />
 
-        @{
-            var topLevelReqs = Workspace.Document.Requirements
-                .Where(r => string.IsNullOrWhiteSpace(r.ParentRequirementId))
+        @if (isAcMode)
+        {
+            var renderedAcIds = new HashSet<string>(StringComparer.Ordinal);
+
+            @foreach (var rationale in Workspace.Document.Rationales)
+            {
+                var linkedAcs = Workspace.Document.AchievementCriteria
+                    .Where(ac => string.Equals(ac.RationaleId, rationale.Id, StringComparison.Ordinal))
+                    .ToList();
+
+                <div class="tree-rationale">
+                    <div class="tree-rationale-header"
+                         role="button"
+                         title="@rationale.Description"
+                         @onclick='() => { Workspace.SetWorkbenchMode("usdm"); Workspace.SelectRationale(rationale.Id); }'>
+                        <span class="text-truncate">
+                            <span class="v2-mono-id me-1">@rationale.Id</span>@rationale.Title
+                        </span>
+                        <button type="button" class="v2-btn v2-btn-xs v2-btn-ghost p-1" title="この理由に達成基準 (AC) を追加"
+                                @onclick:stopPropagation="true"
+                                @onclick="() => Workspace.AddAchievementCriterion(rationale.Id)">
+                            <UiIcon Name="plus" Size="12" />
+                        </button>
+                    </div>
+
+                    @if (linkedAcs.Count == 0)
+                    {
+                        <div class="small v2-text-muted ps-2 py-1" style="font-size: 0.74rem;">AC 未登録</div>
+                    }
+                    else
+                    {
+                        @foreach (var ac in linkedAcs)
+                        {
+                            renderedAcIds.Add(ac.Id);
+                            @RenderAcTreeNode(ac)
+                        }
+                    }
+                </div>
+            }
+
+            var orphanAcs = Workspace.Document.AchievementCriteria
+                .Where(ac => !renderedAcIds.Contains(ac.Id))
                 .ToList();
-            var renderedTopIds = new HashSet<string>(StringComparer.Ordinal);
+            @if (orphanAcs.Count > 0)
+            {
+                <div class="tree-rationale">
+                    <div class="tree-rationale-header tree-rationale-header-danger">
+                        <span class="d-inline-flex align-items-center gap-1">
+                            <UiIcon Name="alert-triangle" Size="13" />
+                            <span>根拠未設定 AC (AC-ERR-001)</span>
+                        </span>
+                    </div>
+                    @foreach (var ac in orphanAcs)
+                    {
+                        @RenderAcTreeNode(ac)
+                    }
+                </div>
+            }
         }
+        else
+        {
+        var topLevelReqs = Workspace.Document.Requirements
+            .Where(r => string.IsNullOrWhiteSpace(r.ParentRequirementId))
+            .ToList();
+        var renderedTopIds = new HashSet<string>(StringComparer.Ordinal);
 
         @foreach (var rationale in Workspace.Document.Rationales)
         {
@@ -73,9 +148,7 @@
             </div>
         }
 
-        @{
-            var orphans = topLevelReqs.Where(r => !renderedTopIds.Contains(r.Id)).ToList();
-        }
+        var orphans = topLevelReqs.Where(r => !renderedTopIds.Contains(r.Id)).ToList();
         @if (orphans.Count > 0)
         {
             <div class="tree-rationale">
@@ -95,16 +168,351 @@
                 }
             </div>
         }
+        }
     </aside>
 
-    <!-- ==================== CENTER PANE: STRUCTURED SLOT EDITOR ==================== -->
+    <!-- ==================== CENTER PANE: STRUCTURED SLOT EDITOR / AC EDITOR ==================== -->
     <section class="wb-pane wb-pane-center">
+        <div class="wb-mode-bar">
+            <div class="v2-segment" role="tablist" aria-label="Workbench Mode">
+                <button type="button"
+                        role="tab"
+                        aria-selected="@(!isAcMode)"
+                        class="v2-segment-item @(!isAcMode ? "active" : "")"
+                        @onclick='() => Workspace.SetWorkbenchMode("usdm")'>
+                    <span>要求 (USDM)</span>
+                    <span class="v2-mono-id">@Workspace.Document.Requirements.Count</span>
+                </button>
+                <button type="button"
+                        role="tab"
+                        aria-selected="@isAcMode"
+                        class="v2-segment-item @(isAcMode ? "active" : "")"
+                        @onclick='() => Workspace.SetWorkbenchMode("ac")'>
+                    <span>達成基準 (AC)</span>
+                    <span class="v2-mono-id">@Workspace.Document.AchievementCriteria.Count</span>
+                </button>
+            </div>
+
+            @if (isAcMode)
+            {
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-primary" @onclick="() => Workspace.AddAchievementCriterion()">
+                    <UiIcon Name="plus" Size="12" />
+                    <span>達成基準 (AC) を追加</span>
+                </button>
+            }
+        </div>
+
         @{
             var selected = Workspace.GetSelectedRequirement();
             var selectedRationale = Workspace.GetSelectedRationale();
         }
 
-        @if (selectedRationale is not null)
+        @if (isAcMode)
+        {
+            @if (Workspace.Document.AchievementCriteria.Count == 0)
+            {
+                <EmptyState Icon="clipboard-check"
+                            Title="達成基準（AC）がまだ登録されていません"
+                            Description="WDD（Why Driven Development）の達成基準を作成し、実現側の親要求（Composite）と検証側の E2E（Journey）を多対多で紐づけましょう。">
+                    <Actions>
+                        <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick="() => Workspace.AddAchievementCriterion()">
+                            <UiIcon Name="plus" Size="13" />
+                            <span>最初の達成基準 (AC) を作成</span>
+                        </button>
+                        @if (Workspace.Document.Rationales.Count == 0)
+                        {
+                            <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" @onclick="() => { Workspace.AddRationale(); }">
+                                <UiIcon Name="plus" Size="13" />
+                                <span>先に Rationale を作成</span>
+                            </button>
+                        }
+                    </Actions>
+                </EmptyState>
+            }
+            else if (selectedAc is null)
+            {
+                <EmptyState Icon="clipboard-check"
+                            Compact="true"
+                            Title="編集する達成基準（AC）を選択してください"
+                            Description="左のツリーから AC を選択するか、新しく作成してください。" />
+            }
+            else
+            {
+                var acTrace = AcTraceabilityAnalyzer.Analyze(Workspace.Document, selectedAc.Id);
+                var allComposites = Workspace.Document.Requirements
+                    .Where(r => r.NodeKind == RequirementNodeKind.Composite)
+                    .OrderBy(r => r.Id, StringComparer.Ordinal)
+                    .ToList();
+                var filteredComposites = string.IsNullOrWhiteSpace(_acCompositeSearch)
+                    ? allComposites
+                    : allComposites.Where(c =>
+                        c.Id.Contains(_acCompositeSearch, StringComparison.OrdinalIgnoreCase)
+                        || c.Title.Contains(_acCompositeSearch, StringComparison.OrdinalIgnoreCase)).ToList();
+
+                <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="v2-badge v2-badge-outline">AchievementCriterion (AC)</span>
+                        <span class="v2-mono-id fw-bold">@selectedAc.Id</span>
+                    </div>
+                    <button type="button" class="v2-btn v2-btn-sm v2-btn-outline-danger"
+                            @onclick="() => Workspace.DeleteAchievementCriterion(selectedAc.Id)">
+                        <UiIcon Name="trash" Size="13" />
+                        <span>削除</span>
+                    </button>
+                </div>
+
+                <!-- 1. 基本情報 -->
+                <div class="slot-card">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="slot-label">AC ID</label>
+                            <input type="text" class="form-control form-control-sm font-monospace"
+                                   value="@selectedAc.Id"
+                                   @onchange="e => RenameAcId(selectedAc, e.Value?.ToString())" />
+                        </div>
+                        <div class="col-md-8">
+                            <label class="slot-label">
+                                親 Rationale (US / Why)
+                                <span class="slot-type-hint">必須 (AC-ERR-001)</span>
+                            </label>
+                            <select class="form-select form-select-sm"
+                                    value="@selectedAc.RationaleId"
+                                    @onchange="e => { selectedAc.RationaleId = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }">
+                                <option value="">-- Rationale を選択 --</option>
+                                @foreach (var rat in Workspace.Document.Rationales)
+                                {
+                                    <option value="@rat.Id">[@rat.Id] @rat.Title</option>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(selectedAc.RationaleId)
+                                    && !Workspace.Document.Rationales.Any(r => string.Equals(r.Id, selectedAc.RationaleId, StringComparison.Ordinal)))
+                                {
+                                    <option value="@selectedAc.RationaleId">[未定義] @selectedAc.RationaleId</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="slot-label">
+                                タイトル (達成基準・観点名)
+                                <span class="slot-type-hint">必須 (AC-ERR-004)</span>
+                            </label>
+                            <input type="text" class="form-control form-control-sm"
+                                   placeholder="例: 通常施錠・解錠とアンサーバック通知"
+                                   value="@selectedAc.Title"
+                                   @oninput="e => { selectedAc.Title = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }" />
+                        </div>
+                        <div class="col-12">
+                            <label class="slot-label">達成基準の説明 (Description)</label>
+                            <textarea class="form-control form-control-sm v2-prose" rows="3"
+                                      placeholder="WDD で合意した達成基準本文や完了条件を記述"
+                                      value="@selectedAc.Description"
+                                      @oninput="e => { selectedAc.Description = e.Value?.ToString() ?? string.Empty; Workspace.NotifyChanged(); }"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. 実現側: 親要求 (Composite) 紐づけ -->
+                <div class="slot-card">
+                    <div class="slot-card-header">
+                        <label class="slot-label mb-0">
+                            実現側: 親要求 (Composite) 紐づけ
+                            <span class="slot-type-hint">多対多可 · AC-WARN-001</span>
+                        </label>
+                        <span class="v2-badge @(selectedAc.LinkedCompositeIds.Count > 0 ? "v2-badge-primary" : "v2-badge-warning")">
+                            @selectedAc.LinkedCompositeIds.Count 件選択中
+                        </span>
+                    </div>
+
+                    @if (allComposites.Count == 0)
+                    {
+                        <div class="small v2-text-muted">
+                            親要求（Composite）がまだありません。「要求 (USDM)」モードで親要求を作成してください。
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mb-2">
+                            <input type="text" class="form-control form-control-sm"
+                                   placeholder="親要求を ID・タイトルで絞り込み..."
+                                   @bind="_acCompositeSearch" @bind:event="oninput" />
+                        </div>
+                        <div class="v2-checklist-scroll">
+                            @foreach (var comp in filteredComposites)
+                            {
+                                var isChecked = selectedAc.LinkedCompositeIds.Contains(comp.Id, StringComparer.Ordinal);
+                                <label class="v2-checklist-item @(isChecked ? "checked" : "")">
+                                    <input type="checkbox"
+                                           class="form-check-input mt-1 flex-shrink-0"
+                                           checked="@isChecked"
+                                           @onchange="e => ToggleAcComposite(selectedAc, comp.Id, e.Value is bool b && b)" />
+                                    <span class="flex-grow-1" style="min-width: 0;">
+                                        <span class="v2-mono-id me-1">@comp.Id</span>
+                                        <span class="fw-semibold v2-text-primary">@comp.Title</span>
+                                        @if (comp.RationaleRefs.Count > 0)
+                                        {
+                                            <span class="v2-mono-id ms-1">(@string.Join(", ", comp.RationaleRefs))</span>
+                                        }
+                                    </span>
+                                </label>
+                            }
+                            @if (filteredComposites.Count == 0)
+                            {
+                                <div class="small v2-text-muted p-2 text-center">一致する親要求がありません。</div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- 3. 検証側: E2E (Journey) 紐づけ -->
+                <div class="slot-card">
+                    <div class="slot-card-header">
+                        <label class="slot-label mb-0">
+                            検証側: E2E シナリオ (Journey) 紐づけ
+                            <span class="slot-type-hint">多対多可 · AC-WARN-002</span>
+                        </label>
+                        <span class="v2-badge @(selectedAc.LinkedJourneyIds.Count > 0 ? "v2-badge-success" : "v2-badge-outline")">
+                            @selectedAc.LinkedJourneyIds.Count 件選択中
+                        </span>
+                    </div>
+
+                    @if (Workspace.Document.Journeys.Count == 0)
+                    {
+                        <div class="small v2-text-muted">
+                            Journey が未登録です。<button type="button" class="v2-btn-link" @onclick='() => Navigation.NavigateTo("/journey")'>Journey ビューで作成</button>するか、下の手動検証観点メモを記入してください。
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="v2-checklist-scroll">
+                            @foreach (var jrn in Workspace.Document.Journeys.OrderBy(j => j.Id, StringComparer.Ordinal))
+                            {
+                                var isChecked = selectedAc.LinkedJourneyIds.Contains(jrn.Id, StringComparer.Ordinal);
+                                <label class="v2-checklist-item @(isChecked ? "checked" : "")">
+                                    <input type="checkbox"
+                                           class="form-check-input mt-1 flex-shrink-0"
+                                           checked="@isChecked"
+                                           @onchange="e => ToggleAcJourney(selectedAc, jrn.Id, e.Value is bool b && b)" />
+                                    <span class="flex-grow-1" style="min-width: 0;">
+                                        <span class="v2-mono-id me-1">@jrn.Id</span>
+                                        <span class="fw-semibold v2-text-primary">@jrn.Title</span>
+                                        <span class="small v2-text-muted ms-1">(@jrn.Steps.Count ステップ)</span>
+                                    </span>
+                                </label>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- 4. 観点タグ & 手動検証観点メモ -->
+                <div class="slot-card">
+                    <div class="mb-3">
+                        <label class="slot-label">観点タグ (ViewpointTags)</label>
+                        <div class="d-flex gap-1 mb-2">
+                            <input type="text" class="form-control form-control-sm"
+                                   placeholder="例: 正, 禁, 安全, 物理:連打（カンマ区切り可）"
+                                   @bind="_newAcTag"
+                                   @onkeydown="e => OnAcTagKeyDown(e, selectedAc)" />
+                            <button type="button" class="v2-btn v2-btn-sm v2-btn-outline-primary"
+                                    @onclick="() => AddAcTags(selectedAc)">
+                                <UiIcon Name="plus" Size="12" />
+                                <span>追加</span>
+                            </button>
+                        </div>
+                        @if (selectedAc.ViewpointTags.Count > 0)
+                        {
+                            <div class="chip-group">
+                                @foreach (var tag in selectedAc.ViewpointTags.ToList())
+                                {
+                                    <span class="v2-badge v2-badge-outline">
+                                        <span>@tag</span>
+                                        <button type="button" class="v2-btn v2-btn-ghost p-0" style="color: inherit;"
+                                                aria-label="タグを削除"
+                                                @onclick="() => RemoveAcTag(selectedAc, tag)">
+                                            <UiIcon Name="x" Size="11" />
+                                        </button>
+                                    </span>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <div>
+                        <label class="slot-label">
+                            手動検証観点メモ (ManualVerificationNote)
+                            <span class="slot-type-hint">任意 · 離散論理外の物理・運用観点</span>
+                        </label>
+                        <textarea class="form-control form-control-sm v2-prose" rows="2"
+                                  placeholder="例: チャタリング・同時押し時の実機応答確認、500ms 以内のハードウェア遮断確認"
+                                  value="@selectedAc.ManualVerificationNote"
+                                  @oninput="e => { selectedAc.ManualVerificationNote = EmptyToNull(e.Value?.ToString()); Workspace.NotifyChanged(); }"></textarea>
+                    </div>
+                </div>
+
+                <!-- 5. 関連・横飛び火プレビュー (AcTraceabilityAnalyzer) -->
+                <div class="slot-card">
+                    <div class="slot-card-header">
+                        <span class="slot-label mb-0">関連・横飛び火プレビュー（自動導出）</span>
+                        <span class="v2-mono-id">AcTraceabilityAnalyzer</span>
+                    </div>
+
+                    <div class="d-flex align-items-center flex-wrap gap-2 mb-2 small">
+                        <span class="v2-badge v2-badge-outline">
+                            配下 Atomic: @acTrace.ResolvedAtomicIds.Count 件
+                        </span>
+                        <span class="v2-badge v2-badge-outline">
+                            参照 Glossary: @acTrace.ReferencedTermIds.Count 語彙
+                        </span>
+                        <span class="v2-badge @(acTrace.LateralImpactAcLinks.Count > 0 ? "v2-badge-warning" : "v2-badge-outline")">
+                            横飛び火候補: @acTrace.LateralImpactAcLinks.Count 件
+                        </span>
+                    </div>
+
+                    @if (acTrace.ResolvedAtomicIds.Count > 0)
+                    {
+                        <div class="mb-3">
+                            <div class="small v2-text-muted mb-1">解決された Atomic 要求（クリックで USDM エディタへ移動）:</div>
+                            <div class="chip-group">
+                                @foreach (var atomicId in acTrace.ResolvedAtomicIds)
+                                {
+                                    <button type="button"
+                                            class="v2-btn v2-btn-xs v2-btn-outline font-monospace"
+                                            @onclick="() => Workspace.SelectRequirement(atomicId)">
+                                        <span>@atomicId</span>
+                                        <UiIcon Name="external-link" Size="11" />
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <div>
+                        <div class="small v2-text-muted mb-1">共有 Glossary 経由の横飛び火候補（他 AC）:</div>
+                        @if (acTrace.LateralImpactAcLinks.Count == 0)
+                        {
+                            <div class="small v2-text-muted">同じ状態・ドメイン語彙を共有する他の AC は検出されていません。</div>
+                        }
+                        else
+                        {
+                            <div class="d-flex flex-wrap gap-2">
+                                @foreach (var link in acTrace.LateralImpactAcLinks)
+                                {
+                                    var sharedLabels = string.Join(", ", link.SharedTerms.Select(t => t.DisplayName));
+                                    <button type="button"
+                                            class="v2-lateral-badge"
+                                            title="共有語彙: @sharedLabels"
+                                            @onclick="() => Workspace.SelectAc(link.TargetAcId, switchToAcMode: true)">
+                                        <UiIcon Name="git-branch" Size="12" />
+                                        <span class="font-monospace">@link.TargetAcId</span>
+                                        <span>@link.TargetAcTitle</span>
+                                        <span class="v2-text-muted" style="font-weight: 500;">(@sharedLabels)</span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+        else if (selectedRationale is not null)
         {
             var linkedParents = Workspace.Document.Requirements
                 .Where(r => string.IsNullOrWhiteSpace(r.ParentRequirementId)
@@ -999,7 +1407,54 @@
             </div>
         </div>
 
-        @if (selectedRationale is not null)
+        @if (isAcMode)
+        {
+            @if (selectedAc is null)
+            {
+                <div class="preview-box v2-text-muted small">達成基準（AC）を選択すると WDD トレーサビリティサマリーが表示されます。</div>
+            }
+            else
+            {
+                var rightAcTrace = AcTraceabilityAnalyzer.Analyze(Workspace.Document, selectedAc.Id);
+                var parentRat = Workspace.Document.Rationales.FirstOrDefault(
+                    r => string.Equals(r.Id, selectedAc.RationaleId, StringComparison.Ordinal));
+
+                <div class="preview-box">
+                    <div class="d-flex align-items-center justify-content-between mb-1">
+                        <span class="v2-badge v2-badge-outline">WDD 二股トレース</span>
+                        <span class="v2-mono-id">@selectedAc.Id</span>
+                    </div>
+                    <div class="fw-bold small mt-1 v2-text-primary">@selectedAc.Title</div>
+                    @if (parentRat is not null)
+                    {
+                        <div class="small v2-text-muted mt-1">
+                            根拠: <span class="v2-mono-id">@parentRat.Id</span> @parentRat.Title
+                        </div>
+                    }
+                    <div class="d-flex flex-column gap-1 mt-2 small">
+                        <div class="d-flex justify-content-between">
+                            <span class="v2-text-secondary">検証側 (E2E Journey):</span>
+                            <span class="fw-semibold v2-text-primary">@selectedAc.LinkedJourneyIds.Count 件</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="v2-text-secondary">実現側 (親要求 / Atomic):</span>
+                            <span class="fw-semibold v2-text-primary">@selectedAc.LinkedCompositeIds.Count 件 / @rightAcTrace.ResolvedAtomicIds.Count 件</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="v2-text-secondary">手動検証観点メモ:</span>
+                            <span class="fw-semibold v2-text-primary">@(string.IsNullOrWhiteSpace(selectedAc.ManualVerificationNote) ? "なし" : "あり")</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="v2-text-secondary">横飛び火候補 (他 AC):</span>
+                            <span class="fw-semibold @(rightAcTrace.LateralImpactAcLinks.Count > 0 ? "v2-text-warning" : "v2-text-primary")">
+                                @rightAcTrace.LateralImpactAcLinks.Count 件
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+        else if (selectedRationale is not null)
         {
             <div class="preview-box">
                 <div class="d-flex align-items-center justify-content-between mb-1">
@@ -1085,12 +1540,18 @@
             </div>
         }
 
+        @{
+            var selectedScopeDiagnostics = isAcMode
+                ? (selectedAc is null ? (IReadOnlyList<LintDiagnostic>)[] : Workspace.GetDiagnosticsForAc(selectedAc.Id))
+                : (selected is null ? (IReadOnlyList<LintDiagnostic>)[] : Workspace.GetDiagnosticsForRequirement(selected.Id));
+            var hasSelectedTarget = isAcMode ? selectedAc is not null : selected is not null;
+        }
         <div class="d-flex align-items-center justify-content-between mt-2 mb-2 gap-2">
             <div class="wb-section-title mb-0">GraphLinter Diagnostics</div>
             <div class="v2-segment" role="group" aria-label="Diagnostics Scope">
                 <button type="button" class="v2-segment-item @(!_showAllDiagnostics ? "active" : "")"
                         @onclick="() => _showAllDiagnostics = false">
-                    選択中 (@(selected is null ? 0 : Workspace.GetDiagnosticsForRequirement(selected.Id).Count))
+                    選択中 (@selectedScopeDiagnostics.Count)
                 </button>
                 <button type="button" class="v2-segment-item @(_showAllDiagnostics ? "active" : "")"
                         @onclick="() => _showAllDiagnostics = true">
@@ -1100,9 +1561,9 @@
         </div>
 
         @{
-            var visibleDiagnostics = _showAllDiagnostics || selected is null
+            var visibleDiagnostics = _showAllDiagnostics || !hasSelectedTarget
                 ? Workspace.Diagnostics
-                : Workspace.GetDiagnosticsForRequirement(selected.Id);
+                : selectedScopeDiagnostics;
         }
 
         @if (visibleDiagnostics.Count == 0)
@@ -1138,6 +1599,8 @@
 @code {
     private bool _showAllDiagnostics;
     private string _previewMode = "Both";
+    private string _acCompositeSearch = string.Empty;
+    private string _newAcTag = string.Empty;
 
     protected override void OnInitialized()
     {
@@ -1147,6 +1610,115 @@
     private void HandleChanged()
     {
         InvokeAsync(StateHasChanged);
+    }
+
+    private RenderFragment RenderAcTreeNode(AchievementCriterion ac) => __builder =>
+    {
+        var isSelected = string.Equals(Workspace.SelectedAcId, ac.Id, StringComparison.Ordinal);
+        var diags = Workspace.GetDiagnosticsForAc(ac.Id);
+        var errCount = diags.Count(d => d.Severity == LintSeverity.Error);
+        var warnCount = diags.Count(d => d.Severity == LintSeverity.Warning);
+
+        <button type="button"
+                class="tree-node-btn @(isSelected ? "selected" : "")"
+                @onclick="() => Workspace.SelectAc(ac.Id, switchToAcMode: true)">
+            <span class="tree-node-label" title="[@ac.Id] @ac.Title">
+                <span class="v2-mono-id me-1">@ac.Id</span>@ac.Title
+            </span>
+            <span class="tree-badges">
+                @if (errCount > 0)
+                {
+                    <span class="chip-badge chip-err">@errCount</span>
+                }
+                else if (warnCount > 0)
+                {
+                    <span class="chip-badge chip-warn">@warnCount</span>
+                }
+            </span>
+        </button>
+    };
+
+    private void RenameAcId(AchievementCriterion ac, string? newId)
+    {
+        if (string.IsNullOrWhiteSpace(newId))
+        {
+            return;
+        }
+
+        ac.Id = newId.Trim();
+        Workspace.SelectAc(ac.Id, switchToAcMode: true);
+        Workspace.NotifyChanged();
+    }
+
+    private void ToggleAcComposite(AchievementCriterion ac, string compositeId, bool isChecked)
+    {
+        if (isChecked)
+        {
+            if (!ac.LinkedCompositeIds.Contains(compositeId, StringComparer.Ordinal))
+            {
+                ac.LinkedCompositeIds.Add(compositeId);
+            }
+        }
+        else
+        {
+            ac.LinkedCompositeIds.RemoveAll(id => string.Equals(id, compositeId, StringComparison.Ordinal));
+        }
+        Workspace.NotifyChanged();
+    }
+
+    private void ToggleAcJourney(AchievementCriterion ac, string journeyId, bool isChecked)
+    {
+        if (isChecked)
+        {
+            if (!ac.LinkedJourneyIds.Contains(journeyId, StringComparer.Ordinal))
+            {
+                ac.LinkedJourneyIds.Add(journeyId);
+            }
+        }
+        else
+        {
+            ac.LinkedJourneyIds.RemoveAll(id => string.Equals(id, journeyId, StringComparison.Ordinal));
+        }
+        Workspace.NotifyChanged();
+    }
+
+    private void AddAcTags(AchievementCriterion ac)
+    {
+        if (string.IsNullOrWhiteSpace(_newAcTag))
+        {
+            return;
+        }
+
+        var parts = _newAcTag.Split([',', '、'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var added = false;
+        foreach (var part in parts)
+        {
+            if (!string.IsNullOrWhiteSpace(part) && !ac.ViewpointTags.Contains(part, StringComparer.Ordinal))
+            {
+                ac.ViewpointTags.Add(part);
+                added = true;
+            }
+        }
+
+        _newAcTag = string.Empty;
+        if (added)
+        {
+            Workspace.NotifyChanged();
+        }
+    }
+
+    private void OnAcTagKeyDown(KeyboardEventArgs e, AchievementCriterion ac)
+    {
+        if (e.Key == "Enter")
+        {
+            AddAcTags(ac);
+        }
+    }
+
+    private void RemoveAcTag(AchievementCriterion ac, string tag)
+    {
+        ac.ViewpointTags.Remove(tag);
+        Workspace.NotifyChanged();
     }
 
     private RenderFragment RenderTreeNode(CanonicalRequirementNode node, bool isChild) => __builder =>
@@ -1389,6 +1961,12 @@
 
     private void JumpToTarget(string targetId)
     {
+        if (Workspace.Document.AchievementCriteria.Any(ac => string.Equals(ac.Id, targetId, StringComparison.Ordinal)))
+        {
+            Workspace.SelectAc(targetId, switchToAcMode: true);
+            return;
+        }
+
         if (Workspace.Document.Requirements.Any(r => r.Id == targetId))
         {
             Workspace.SelectRequirement(targetId);

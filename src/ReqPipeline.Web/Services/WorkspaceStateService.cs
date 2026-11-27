@@ -13,6 +13,8 @@ public sealed class WorkspaceStateService
     public string? SelectedRequirementId { get; private set; }
     public string? SelectedRationaleId { get; private set; }
     public string? SelectedJourneyId { get; private set; }
+    public string? SelectedAcId { get; private set; }
+    public string WorkbenchMode { get; private set; } = "usdm";
     public string? LastErrorMessage { get; private set; }
     public string ActiveSampleKey { get; private set; } = "crud";
     public bool IsDirty { get; private set; }
@@ -38,6 +40,7 @@ public sealed class WorkspaceStateService
             SelectedRequirementId = null;
             SelectedRationaleId = null;
             SelectedJourneyId = null;
+            SelectedAcId = null;
             IsDirty = false;
             RefreshLintAndNotify();
         }
@@ -53,6 +56,7 @@ public sealed class WorkspaceStateService
         SelectedRequirementId = null;
         SelectedRationaleId = null;
         SelectedJourneyId = null;
+        SelectedAcId = null;
         LastErrorMessage = null;
         IsDirty = false;
         RefreshLintAndNotify();
@@ -78,6 +82,7 @@ public sealed class WorkspaceStateService
             ActiveSampleKey = string.Empty;
             SelectedRationaleId = null;
             SelectedJourneyId = Document.Journeys.FirstOrDefault()?.Id;
+            SelectedAcId = Document.AchievementCriteria.FirstOrDefault()?.Id;
             SelectedRequirementId = Document.Requirements
                 .FirstOrDefault(r => r.NodeKind == RequirementNodeKind.Atomic)?.Id
                 ?? Document.Requirements.FirstOrDefault()?.Id;
@@ -155,6 +160,7 @@ public sealed class WorkspaceStateService
             error = null;
             SelectedRationaleId = null;
             SelectedJourneyId = Document.Journeys.FirstOrDefault()?.Id;
+            SelectedAcId = Document.AchievementCriteria.FirstOrDefault()?.Id;
             SelectedRequirementId = Document.Requirements
                 .FirstOrDefault(r => r.NodeKind == RequirementNodeKind.Atomic)?.Id
                 ?? Document.Requirements.FirstOrDefault()?.Id;
@@ -175,6 +181,10 @@ public sealed class WorkspaceStateService
     {
         SelectedRequirementId = requirementId;
         SelectedRationaleId = null;
+        if (!string.IsNullOrWhiteSpace(requirementId))
+        {
+            WorkbenchMode = "usdm";
+        }
         OnChange?.Invoke();
     }
 
@@ -190,6 +200,76 @@ public sealed class WorkspaceStateService
         SelectedJourneyId = journeyId;
         OnChange?.Invoke();
     }
+
+    public void SetWorkbenchMode(string mode)
+    {
+        WorkbenchMode = string.Equals(mode, "ac", StringComparison.OrdinalIgnoreCase) ? "ac" : "usdm";
+        if (WorkbenchMode == "ac" && SelectedAcId is null)
+        {
+            SelectedAcId = Document.AchievementCriteria.FirstOrDefault()?.Id;
+        }
+        OnChange?.Invoke();
+    }
+
+    public void SelectAc(string? acId, bool switchToAcMode = false)
+    {
+        SelectedAcId = acId;
+        if (switchToAcMode)
+        {
+            WorkbenchMode = "ac";
+        }
+        OnChange?.Invoke();
+    }
+
+    public AchievementCriterion? GetSelectedAc() =>
+        SelectedAcId is null
+            ? null
+            : Document.AchievementCriteria.FirstOrDefault(ac => string.Equals(ac.Id, SelectedAcId, StringComparison.Ordinal));
+
+    public AchievementCriterion AddAchievementCriterion(string? rationaleId = null)
+    {
+        var nextIndex = 1;
+        while (Document.AchievementCriteria.Any(ac => ac.Id == $"AC-{nextIndex:000}"))
+        {
+            nextIndex++;
+        }
+
+        var parentRationaleId = !string.IsNullOrWhiteSpace(rationaleId)
+            ? rationaleId
+            : (Document.Rationales.FirstOrDefault()?.Id ?? string.Empty);
+
+        var ac = new AchievementCriterion
+        {
+            Id = $"AC-{nextIndex:000}",
+            RationaleId = parentRationaleId,
+            Title = $"新規達成基準 {nextIndex}",
+            Description = string.Empty,
+            LinkedCompositeIds = [],
+            LinkedJourneyIds = [],
+            ViewpointTags = []
+        };
+
+        Document.AchievementCriteria.Add(ac);
+        SelectedAcId = ac.Id;
+        WorkbenchMode = "ac";
+        RefreshLintAndNotify(markDirty: true);
+        return ac;
+    }
+
+    public void DeleteAchievementCriterion(string acId)
+    {
+        Document.AchievementCriteria.RemoveAll(ac => string.Equals(ac.Id, acId, StringComparison.Ordinal));
+        if (string.Equals(SelectedAcId, acId, StringComparison.Ordinal))
+        {
+            SelectedAcId = Document.AchievementCriteria.FirstOrDefault()?.Id;
+        }
+        RefreshLintAndNotify(markDirty: true);
+    }
+
+    public IReadOnlyList<LintDiagnostic> GetDiagnosticsForAc(string acId) =>
+        Diagnostics
+            .Where(d => string.Equals(d.TargetId, acId, StringComparison.Ordinal))
+            .ToList();
 
     public CanonicalRequirementNode? GetSelectedRequirement() =>
         SelectedRequirementId is null
@@ -249,6 +329,7 @@ public sealed class WorkspaceStateService
             ActiveSampleKey = string.Empty;
             SelectedRationaleId = null;
             SelectedJourneyId = Document.Journeys.FirstOrDefault()?.Id;
+            SelectedAcId = Document.AchievementCriteria.FirstOrDefault()?.Id;
             SelectedRequirementId = Document.Requirements
                 .FirstOrDefault(r => r.NodeKind == RequirementNodeKind.Atomic)?.Id
                 ?? Document.Requirements.FirstOrDefault()?.Id;
