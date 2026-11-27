@@ -9,6 +9,9 @@
 @{
     var isJa = _language == TestExportLanguage.Japanese;
     var summary = _spec.Summary;
+    var hasCases = summary.TotalTestCases > 0;
+    var hasCoverageDenominator = summary.TotalNonEscapeAtomicRequirements > 0;
+    var isProjectEmptyForTests = summary.TotalTestCases == 0 && _spec.ViewpointContainers.Count == 0 && Workspace.Document.AchievementCriteria.Count == 0;
     var reqContainers = _spec.ViewpointContainers
         .Where(c => c.Kind == TestViewpointKind.RequirementTree)
         .ToList();
@@ -19,16 +22,49 @@
         .Where(c => c.Kind == TestViewpointKind.Journey)
         .ToList();
 
-    var selectedContainer = _selectedContainerId is null
+    var hasAcAxis = Workspace.Document.AchievementCriteria.Count > 0;
+    var assignedCompositeIds = hasAcAxis
+        ? Workspace.Document.AchievementCriteria
+            .SelectMany(ac => ac.LinkedCompositeIds)
+            .ToHashSet(StringComparer.Ordinal)
+        : new HashSet<string>(StringComparer.Ordinal);
+    var unassignedReqContainers = hasAcAxis
+        ? reqContainers.Where(c => !assignedCompositeIds.Contains(c.Id)).ToList()
+        : new List<TestViewpointContainer>();
+
+    var isUnassignedAcSelected = hasAcAxis && string.Equals(_selectedContainerId, UnassignedAcContainerId, StringComparison.Ordinal);
+    var selectedAc = hasAcAxis
+        && _selectedContainerId is not null
+        && _selectedContainerId.StartsWith(AcContainerPrefix, StringComparison.Ordinal)
+        && !isUnassignedAcSelected
+        ? Workspace.Document.AchievementCriteria.FirstOrDefault(
+            ac => string.Equals(ac.Id, _selectedContainerId[AcContainerPrefix.Length..], StringComparison.Ordinal))
+        : null;
+
+    var selectedContainer = _selectedContainerId is null || selectedAc is not null || isUnassignedAcSelected
         ? null
         : _spec.ViewpointContainers.FirstOrDefault(c => string.Equals(c.Id, _selectedContainerId, StringComparison.Ordinal));
     var selectedMatrix = selectedContainer?.Kind == TestViewpointKind.FsmMatrix
         ? _spec.TransitionMatrices.FirstOrDefault(m => string.Equals(m.LifecycleTermId, selectedContainer.Id, StringComparison.Ordinal))
         : null;
 
-    var baseCases = selectedContainer is null
-        ? _spec.AllTestCases
-        : selectedContainer.TestCases;
+    IReadOnlyList<DerivedTestCase> selectedAcE2ECases = selectedAc is not null
+        ? GetAcE2ECases(selectedAc, journeyContainers)
+        : [];
+    IReadOnlyList<DerivedTestCase> selectedAcRealizationCases = selectedAc is not null
+        ? GetAcRealizationCases(selectedAc, reqContainers)
+        : [];
+    IReadOnlyList<DerivedTestCase> unassignedCases = isUnassignedAcSelected
+        ? DeduplicateCases(unassignedReqContainers.SelectMany(c => c.TestCases))
+        : [];
+
+    IReadOnlyList<DerivedTestCase> baseCases = selectedAc is not null
+        ? DeduplicateCases(selectedAcE2ECases.Concat(selectedAcRealizationCases))
+        : isUnassignedAcSelected
+            ? unassignedCases
+            : selectedContainer is null
+                ? _spec.AllTestCases
+                : selectedContainer.TestCases;
     var filteredCases = ApplyFilters(baseCases);
 }
 
@@ -50,9 +86,16 @@
             <span class="tv-metric"
                   title="@summary.CoveredAtomicRequirements / @summary.TotalNonEscapeAtomicRequirements Atomic Requirements">
                 <span class="tv-metric-label">@(isJa ? "要求カバレッジ" : "Coverage")</span>
-                <span class="tv-metric-value @(summary.AtomicRequirementCoveragePercent >= 100.0 ? "tv-metric-value-ok" : "tv-metric-value-warn")">
-                    @summary.AtomicRequirementCoveragePercent.ToString("0.0")%
-                </span>
+                @if (!hasCoverageDenominator)
+                {
+                    <span class="tv-metric-value v2-text-muted">—</span>
+                }
+                else
+                {
+                    <span class="tv-metric-value @(summary.AtomicRequirementCoveragePercent >= 100.0 ? "tv-metric-value-ok" : "tv-metric-value-warn")">
+                        @summary.AtomicRequirementCoveragePercent.ToString("0.0")%
+                    </span>
+                }
             </span>
             <span class="tv-metric-sep" aria-hidden="true"></span>
             <span class="tv-metric" title="FSM マトリクス内の未定義 (UndefinedNoOp) セル総数">
@@ -95,11 +138,11 @@
 
             <!-- Markdown -->
             <div class="tv-export-group" role="group" aria-label="Markdown Export">
-                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="CopyMarkdown" title="Markdown をクリップボードへコピー">
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" disabled="@(!hasCases)" @onclick="CopyMarkdown" title="Markdown をクリップボードへコピー">
                     <UiIcon Name="copy" Size="12" />
                     <span>MD</span>
                 </button>
-                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="DownloadMarkdown" title="Markdown (.md) をダウンロード">
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" disabled="@(!hasCases)" @onclick="DownloadMarkdown" title="Markdown (.md) をダウンロード">
                     <UiIcon Name="download" Size="12" />
                     <span>.md</span>
                 </button>
@@ -107,29 +150,29 @@
 
             <!-- CSV -->
             <div class="tv-export-group">
-                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="DownloadCsv" title="UTF-8 BOM 付き CSV をダウンロード">
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" disabled="@(!hasCases)" @onclick="DownloadCsv" title="UTF-8 BOM 付き CSV をダウンロード">
                     <UiIcon Name="download" Size="12" />
                     <span>CSV</span>
                 </button>
                 <label class="form-check-label small d-inline-flex align-items-center gap-1 mb-0 v2-text-secondary" style="cursor: pointer; font-size: 0.74rem;" title="末尾に Result, Tester, ExecutedAt, Comment の4列を追加">
-                    <input type="checkbox" class="form-check-input mt-0" @bind="_csvIncludeExecutionColumns" />
+                    <input type="checkbox" class="form-check-input mt-0" disabled="@(!hasCases)" @bind="_csvIncludeExecutionColumns" />
                     <span>@(isJa ? "実行列" : "Exec cols")</span>
                 </label>
             </div>
 
             <!-- Gherkin -->
             <div class="tv-export-group">
-                <select class="form-select form-select-sm py-0" style="width: auto; font-size: 0.74rem; height: 24px;" @bind="_gherkinLevelFilter" aria-label="Gherkin Level">
+                <select class="form-select form-select-sm py-0" style="width: auto; font-size: 0.74rem; height: 24px;" disabled="@(!hasCases)" @bind="_gherkinLevelFilter" aria-label="Gherkin Level">
                     <option value="">@(isJa ? "全階層" : "All")</option>
                     <option value="Unit">Unit</option>
                     <option value="Component">Component</option>
                     <option value="E2E">E2E</option>
                 </select>
-                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="CopyGherkin" title="Gherkin をクリップボードへコピー">
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" disabled="@(!hasCases)" @onclick="CopyGherkin" title="Gherkin をクリップボードへコピー">
                     <UiIcon Name="copy" Size="12" />
                     <span>Gherkin</span>
                 </button>
-                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="DownloadGherkin" title="Gherkin (.feature) をダウンロード">
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" disabled="@(!hasCases)" @onclick="DownloadGherkin" title="Gherkin (.feature) をダウンロード">
                     <UiIcon Name="file-code" Size="12" />
                     <span>.feature</span>
                 </button>
@@ -154,9 +197,95 @@
                 </button>
             </div>
 
-            <!-- 1. 要求・達成基準軸 (Rationale -> CompositeRequirement) -->
-            <div class="wb-section-title">@(isJa ? "要求・達成基準軸 (WDD コンテナ)" : "Requirement Viewpoints")</div>
-            @if (reqContainers.Count == 0)
+            <!-- 1. 要求・達成基準軸 (AC コンテナ / V2.0 互換 Composite) -->
+            <div class="wb-section-title">
+                @if (hasAcAxis)
+                {
+                    @(isJa ? "要求・達成基準軸 (AC コンテナ)" : "Achievement Criteria (WDD)")
+                }
+                else
+                {
+                    @(isJa ? "要求・達成基準軸 (WDD コンテナ)" : "Requirement Viewpoints")
+                }
+            </div>
+            @if (hasAcAxis)
+            {
+                var groupedAcByRat = Workspace.Document.AchievementCriteria
+                    .GroupBy(ac => ac.RationaleId ?? string.Empty, StringComparer.Ordinal)
+                    .OrderBy(g => string.IsNullOrEmpty(g.Key) ? 1 : 0)
+                    .ThenBy(g => g.Key, StringComparer.Ordinal);
+
+                @foreach (var ratGroup in groupedAcByRat)
+                {
+                    var ratId = ratGroup.Key;
+                    var ratObj = Workspace.Document.Rationales.FirstOrDefault(r => string.Equals(r.Id, ratId, StringComparison.Ordinal));
+                    var ratTitle = ratObj?.Title;
+
+                    <div class="tree-rationale">
+                        <div class="tree-rationale-header" style="cursor: default;"
+                             title="@(string.IsNullOrEmpty(ratId) ? "根拠未設定" : $"[{ratId}] {ratTitle}")">
+                            @if (string.IsNullOrEmpty(ratId))
+                            {
+                                <span>@(isJa ? "根拠未設定" : "No Rationale")</span>
+                            }
+                            else
+                            {
+                                <span class="text-truncate">
+                                    <span class="v2-mono-id me-1">@ratId</span>@ratTitle
+                                </span>
+                            }
+                        </div>
+
+                        @foreach (var ac in ratGroup.OrderBy(a => a.Id, StringComparer.Ordinal))
+                        {
+                            var containerKey = $"{AcContainerPrefix}{ac.Id}";
+                            var isSelected = string.Equals(_selectedContainerId, containerKey, StringComparison.Ordinal);
+                            var acE2E = GetAcE2ECases(ac, journeyContainers);
+                            var acReal = GetAcRealizationCases(ac, reqContainers);
+                            var acUniqueCount = DeduplicateCases(acE2E.Concat(acReal)).Count;
+                            var acHasEscape = GetAcEscapeRecords(ac, reqContainers).Count > 0;
+
+                            <button type="button"
+                                    class="tree-node-btn @(isSelected ? "selected" : "")"
+                                    @onclick="() => SelectContainer(containerKey)">
+                                <span class="tree-node-label" title="[@ac.Id] @ac.Title">
+                                    <span class="v2-mono-id me-1">@ac.Id</span>@ac.Title
+                                </span>
+                                <span class="tree-badges">
+                                    @if (acHasEscape)
+                                    {
+                                        <span class="v2-badge v2-badge-warning" title="手動テスト設計が必要な EscapeRecord あり">
+                                            <UiIcon Name="alert-triangle" Size="11" />
+                                            <span>@(isJa ? "手動要" : "Manual")</span>
+                                        </span>
+                                    }
+                                    <span class="v2-badge v2-badge-outline">@acUniqueCount</span>
+                                </span>
+                            </button>
+                        }
+                    </div>
+                }
+
+                @if (unassignedReqContainers.Count > 0)
+                {
+                    var unassignedCount = DeduplicateCases(unassignedReqContainers.SelectMany(c => c.TestCases)).Count;
+                    <div class="mt-2 mb-3">
+                        <button type="button"
+                                class="tree-node-btn tree-node-btn-warn @(isUnassignedAcSelected ? "selected" : "")"
+                                @onclick="() => SelectContainer(UnassignedAcContainerId)">
+                            <span class="tree-node-label d-inline-flex align-items-center gap-1"
+                                  title="どの AC にも紐づいていない親要求 (@unassignedReqContainers.Count 件)">
+                                <UiIcon Name="alert-triangle" Size="12" />
+                                <span>@(isJa ? "AC 未割当（要確認）" : "Unassigned to AC")</span>
+                            </span>
+                            <span class="tree-badges">
+                                <span class="v2-badge v2-badge-warning">@unassignedCount</span>
+                            </span>
+                        </button>
+                    </div>
+                }
+            }
+            else if (reqContainers.Count == 0)
             {
                 <div class="small v2-text-muted mb-3">@(isJa ? "要求コンテナがありません。" : "No requirement containers.")</div>
             }
@@ -282,6 +411,27 @@
 
         <!-- RIGHT PANE: DETAIL & INTERACTIVE 2D MATRIX -->
         <section class="wb-pane wb-pane-center">
+            @if (isProjectEmptyForTests)
+            {
+                <EmptyState Icon="clipboard-check"
+                            Title="@(isJa ? "導出されたテストケースがありません" : "No Derived Test Cases")"
+                            Description="@(isJa
+                                ? "Workbench で要求（Composite / Atomic）や Journey を定義すると、Unit・FSM 状態遷移マトリクス・E2E のテストケースが決定論的に自動導出されます。"
+                                : "Define requirements (Composite / Atomic) or journeys in Workbench to deterministically derive Unit, FSM Matrix, and E2E test cases.")">
+                    <Actions>
+                        <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick='() => Navigation.NavigateTo("/")'>
+                            <UiIcon Name="arrow-right" Size="13" />
+                            <span>@(isJa ? "Workbench で要求を作成" : "Create Requirements in Workbench")</span>
+                        </button>
+                        <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" @onclick='() => Navigation.NavigateTo("/glossary")'>
+                            <UiIcon Name="book-open" Size="13" />
+                            <span>@(isJa ? "Glossary で語彙を定義" : "Define Glossary Terms")</span>
+                        </button>
+                    </Actions>
+                </EmptyState>
+            }
+            else
+            {
             <!-- 共通フィルタバー -->
             <div class="v2-card py-2 px-3 mb-3">
                 <div class="d-flex align-items-center flex-wrap gap-2">
@@ -329,7 +479,198 @@
                 </div>
             </div>
 
-            @if (selectedMatrix is not null)
+            @if (selectedAc is not null)
+            {
+                var acTrace = AcTraceabilityAnalyzer.Analyze(Workspace.Document, selectedAc.Id);
+                var acEscapes = GetAcEscapeRecords(selectedAc, reqContainers);
+                var filteredAcE2E = ApplyFilters(selectedAcE2ECases);
+                var filteredAcRealization = ApplyFilters(selectedAcRealizationCases);
+
+                <!-- ==================== AC VIEWPOINT DETAIL ==================== -->
+                <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-3">
+                    <div>
+                        <div class="d-flex align-items-center flex-wrap gap-2">
+                            <span class="v2-badge v2-badge-outline font-monospace">@selectedAc.Id</span>
+                            <h5 class="fw-bold mb-0 v2-text-primary">@selectedAc.Title</h5>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(selectedAc.Description))
+                        {
+                            <div class="small v2-text-secondary v2-prose mt-1">@selectedAc.Description</div>
+                        }
+                        @if (selectedAc.ViewpointTags.Count > 0)
+                        {
+                            <div class="chip-group mt-2">
+                                @foreach (var tag in selectedAc.ViewpointTags)
+                                {
+                                    <span class="v2-badge v2-badge-outline">@tag</span>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <button type="button"
+                            class="v2-btn v2-btn-sm v2-btn-outline-primary flex-shrink-0"
+                            @onclick="() => OpenAcInWorkbench(selectedAc.Id)">
+                        <span>@(isJa ? "Workbench で編集" : "Edit in Workbench")</span>
+                        <UiIcon Name="external-link" Size="13" />
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(selectedAc.ManualVerificationNote))
+                {
+                    <div class="v2-manual-note-card mb-3">
+                        <div class="small fw-bold v2-text-warning d-flex align-items-center gap-1 mb-1">
+                            <UiIcon Name="clipboard-check" Size="14" />
+                            <span>@(isJa ? "手動検証観点メモ（論理モデル外）" : "Manual Verification Note")</span>
+                        </div>
+                        <div class="small v2-text-primary v2-prose">@selectedAc.ManualVerificationNote</div>
+                    </div>
+                }
+
+                @if (acTrace.LateralImpactAcLinks.Count > 0)
+                {
+                    <div class="v2-card py-2 px-3 mb-3">
+                        <div class="small fw-bold v2-text-secondary mb-2 d-flex align-items-center gap-1">
+                            <UiIcon Name="git-branch" Size="13" />
+                            <span>@(isJa ? "横飛び火（共有 Glossary 経由の関連 AC）" : "Lateral Impact (Shared Glossary ACs)")</span>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach (var link in acTrace.LateralImpactAcLinks)
+                            {
+                                var sharedLabels = string.Join(", ", link.SharedTerms.Select(t => isJa ? t.DisplayName : t.CanonicalName));
+                                var targetKey = $"{AcContainerPrefix}{link.TargetAcId}";
+                                <button type="button"
+                                        class="v2-lateral-badge"
+                                        title="@(isJa ? $"共有語彙: {sharedLabels}" : $"Shared terms: {sharedLabels}")"
+                                        @onclick="() => SelectContainer(targetKey)">
+                                    <span class="font-monospace">@link.TargetAcId</span>
+                                    <span>@link.TargetAcTitle</span>
+                                    <span class="v2-text-muted" style="font-weight: 500;">(@sharedLabels)</span>
+                                    <UiIcon Name="arrow-right" Size="11" />
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (acEscapes.Count > 0)
+                {
+                    <div class="escape-box mb-3">
+                        <div class="fw-bold small v2-text-warning d-flex align-items-center gap-1 mb-1">
+                            <UiIcon Name="alert-triangle" Size="14" />
+                            <span>@(isJa ? "手動テスト設計が必要な Escape 要求があります" : "Manual Test Design Required (Escape Records)")</span>
+                        </div>
+                        @foreach (var esc in acEscapes)
+                        {
+                            <div class="d-flex align-items-center justify-content-between gap-2 v2-subcard mb-1 small" style="background: var(--surface-card);">
+                                <div class="d-flex align-items-center flex-wrap gap-2">
+                                    <span class="v2-mono-id">@esc.Id</span>
+                                    <span class="v2-badge v2-badge-warning">@esc.Reason</span>
+                                    <span class="v2-mono-id fw-bold">@esc.RequirementId</span>
+                                    <span class="v2-text-primary">@esc.FreeText</span>
+                                </div>
+                                <button type="button"
+                                        class="v2-btn-link flex-shrink-0"
+                                        @onclick="() => OpenInWorkbench(esc.RequirementId)">
+                                    <span>Workbench</span>
+                                    <UiIcon Name="external-link" Size="12" />
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <!-- 検証側 (E2E) -->
+                <div class="mb-4">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <div class="wb-section-title mb-0">@(isJa ? "検証側（E2E シナリオ）" : "Verification Side (E2E Journeys)")</div>
+                        <span class="v2-badge v2-badge-success">@filteredAcE2E.Count @(isJa ? "件" : "case(s)")</span>
+                    </div>
+                    @if (filteredAcE2E.Count == 0)
+                    {
+                        <div class="v2-subcard small v2-text-muted">
+                            @(selectedAc.LinkedJourneyIds.Count == 0
+                                ? (isJa ? "紐づく E2E シナリオ（Journey）は設定されていません。" : "No E2E journeys linked to this AC.")
+                                : (isJa ? "現在のフィルタ条件に一致する E2E テストケースはありません。" : "No linked E2E test cases match the current filters."))
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var tc in filteredAcE2E)
+                        {
+                            @RenderTestCaseCard(tc, isJa)
+                        }
+                    }
+                </div>
+
+                <!-- 実現側 (Unit / Component) -->
+                <div>
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <div class="wb-section-title mb-0">@(isJa ? "実現側（Unit / Component）" : "Realization Side (Unit / Component)")</div>
+                        <span class="v2-badge v2-badge-primary">@filteredAcRealization.Count @(isJa ? "件" : "case(s)")</span>
+                    </div>
+                    @if (filteredAcRealization.Count == 0)
+                    {
+                        <div class="v2-subcard small v2-text-muted">
+                            @(selectedAc.LinkedCompositeIds.Count == 0
+                                ? (isJa ? "紐づく親要求（Composite）が設定されていません。" : "No parent requirements linked to this AC.")
+                                : (isJa ? "現在のフィルタ条件に一致する Unit / Component テストケースはありません。" : "No linked Unit/Component test cases match the current filters."))
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var tc in filteredAcRealization)
+                        {
+                            @RenderTestCaseCard(tc, isJa)
+                        }
+                    }
+                </div>
+            }
+            else if (isUnassignedAcSelected)
+            {
+                var unassignedFiltered = ApplyFilters(unassignedCases);
+                <div class="mb-3">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="v2-badge v2-badge-warning">
+                            <UiIcon Name="alert-triangle" Size="12" />
+                            <span>AC-WARN-003</span>
+                        </span>
+                        <h5 class="fw-bold mb-0 v2-text-primary">@(isJa ? "AC 未割当の親要求（要確認）" : "Requirements Unassigned to Any AC")</h5>
+                    </div>
+                    <div class="small v2-text-secondary v2-prose">
+                        @(isJa
+                            ? "以下の親要求（Composite）はどの達成基準（AC）にも紐づいていません。Workbench の「達成基準 (AC)」タブで適切な AC に割り当ててください。"
+                            : "The following parent requirements are not linked to any Achievement Criterion.")
+                    </div>
+                    <div class="chip-group mt-2">
+                        @foreach (var ur in unassignedReqContainers)
+                        {
+                            <button type="button"
+                                    class="v2-btn v2-btn-xs v2-btn-outline-warning"
+                                    @onclick="() => OpenInWorkbench(ur.SourceRef)">
+                                <span class="font-monospace">@ur.Id</span>
+                                <span>@ur.Title</span>
+                                <UiIcon Name="external-link" Size="11" />
+                            </button>
+                        }
+                    </div>
+                </div>
+
+                @if (unassignedFiltered.Count == 0)
+                {
+                    <div class="v2-card text-center py-4 v2-text-muted small">
+                        @(isJa ? "表示対象のテストケースがありません。フィルタ条件を確認してください。" : "No test cases match the current filters.")
+                    </div>
+                }
+                else
+                {
+                    @foreach (var tc in unassignedFiltered)
+                    {
+                        @RenderTestCaseCard(tc, isJa)
+                    }
+                }
+            }
+            else if (selectedMatrix is not null)
             {
                 <!-- ==================== FSM 2D INTERACTIVE MATRIX VIEW ==================== -->
                 <div class="v2-card">
@@ -599,11 +940,15 @@
                     }
                 }
             }
+            }
         </section>
     </div>
 </div>
 
 @code {
+    private const string AcContainerPrefix = "AC::";
+    private const string UnassignedAcContainerId = "AC::__UNASSIGNED__";
+
     private TestSpecificationDocument _spec = new();
     private TestExportLanguage _language = TestExportLanguage.Japanese;
     private string? _selectedContainerId;
@@ -640,12 +985,90 @@
     {
         _spec = TestSpecificationGenerator.Generate(Workspace.Document);
 
-        if (_selectedContainerId is not null
-            && !_spec.ViewpointContainers.Any(c => string.Equals(c.Id, _selectedContainerId, StringComparison.Ordinal)))
+        if (_selectedContainerId is not null)
         {
-            _selectedContainerId = null;
-            ClearSelectedCell();
+            var isValid = false;
+            if (string.Equals(_selectedContainerId, UnassignedAcContainerId, StringComparison.Ordinal))
+            {
+                isValid = Workspace.Document.AchievementCriteria.Count > 0;
+            }
+            else if (_selectedContainerId.StartsWith(AcContainerPrefix, StringComparison.Ordinal))
+            {
+                var acId = _selectedContainerId[AcContainerPrefix.Length..];
+                isValid = Workspace.Document.AchievementCriteria.Any(
+                    ac => string.Equals(ac.Id, acId, StringComparison.Ordinal));
+            }
+            else
+            {
+                isValid = _spec.ViewpointContainers.Any(
+                    c => string.Equals(c.Id, _selectedContainerId, StringComparison.Ordinal));
+            }
+
+            if (!isValid)
+            {
+                _selectedContainerId = null;
+                ClearSelectedCell();
+            }
         }
+    }
+
+    private static List<DerivedTestCase> DeduplicateCases(IEnumerable<DerivedTestCase> cases)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<DerivedTestCase>();
+        foreach (var tc in cases)
+        {
+            if (seen.Add(tc.TestCaseId))
+            {
+                result.Add(tc);
+            }
+        }
+        return result;
+    }
+
+    private static List<DerivedTestCase> GetAcE2ECases(
+        AchievementCriterion ac,
+        List<TestViewpointContainer> journeyContainers)
+    {
+        var linkedSet = ac.LinkedJourneyIds.ToHashSet(StringComparer.Ordinal);
+        return DeduplicateCases(
+            journeyContainers
+                .Where(c => linkedSet.Contains(c.Id))
+                .SelectMany(c => c.TestCases));
+    }
+
+    private static List<DerivedTestCase> GetAcRealizationCases(
+        AchievementCriterion ac,
+        List<TestViewpointContainer> reqContainers)
+    {
+        var linkedSet = ac.LinkedCompositeIds.ToHashSet(StringComparer.Ordinal);
+        return DeduplicateCases(
+            reqContainers
+                .Where(c => linkedSet.Contains(c.Id))
+                .SelectMany(c => c.TestCases));
+    }
+
+    private static List<FreeTextEscapeRecord> GetAcEscapeRecords(
+        AchievementCriterion ac,
+        List<TestViewpointContainer> reqContainers)
+    {
+        var linkedSet = ac.LinkedCompositeIds.ToHashSet(StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<FreeTextEscapeRecord>();
+        foreach (var esc in reqContainers.Where(c => linkedSet.Contains(c.Id)).SelectMany(c => c.EscapeRecords))
+        {
+            if (seen.Add(esc.Id))
+            {
+                result.Add(esc);
+            }
+        }
+        return result;
+    }
+
+    private void OpenAcInWorkbench(string acId)
+    {
+        Workspace.SelectAc(acId, switchToAcMode: true);
+        Navigation.NavigateTo("/");
     }
 
     private void SelectContainer(string? containerId)

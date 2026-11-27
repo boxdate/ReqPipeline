@@ -13,13 +13,17 @@ public sealed class WorkspaceStateService
     public string? SelectedRequirementId { get; private set; }
     public string? SelectedRationaleId { get; private set; }
     public string? SelectedJourneyId { get; private set; }
+    public string? SelectedAcId { get; private set; }
+    public string WorkbenchMode { get; private set; } = "usdm";
     public string? LastErrorMessage { get; private set; }
     public string ActiveSampleKey { get; private set; } = "crud";
+    public bool IsDirty { get; private set; }
 
     public int ErrorCount => Diagnostics.Count(d => d.Severity == LintSeverity.Error);
     public int WarningCount => Diagnostics.Count(d => d.Severity == LintSeverity.Warning);
 
     public event Action? OnChange;
+    public event Action? OnDocumentMutated;
 
     public WorkspaceStateService(IWebHostEnvironment env)
     {
@@ -31,12 +35,91 @@ public sealed class WorkspaceStateService
     {
         if (!TryLoadSample("crud", out _))
         {
-            Document = CreateEmptyDocument();
+            Document = KnowledgeGraphDocument.CreateEmpty("新規要件仕様書");
             ActiveSampleKey = string.Empty;
             SelectedRequirementId = null;
             SelectedRationaleId = null;
+            SelectedJourneyId = null;
+            SelectedAcId = null;
+            IsDirty = false;
             RefreshLintAndNotify();
         }
+    }
+
+    public void CreateNewProject(string title, string description = "", bool includeDefaultCrudBehaviors = false)
+    {
+        var trimmedTitle = string.IsNullOrWhiteSpace(title) ? "新規プロジェクト" : title.Trim();
+        var trimmedDescription = description?.Trim() ?? string.Empty;
+
+        Document = KnowledgeGraphDocument.CreateEmpty(trimmedTitle, trimmedDescription, includeDefaultCrudBehaviors);
+        ActiveSampleKey = string.Empty;
+        SelectedRequirementId = null;
+        SelectedRationaleId = null;
+        SelectedJourneyId = null;
+        SelectedAcId = null;
+        LastErrorMessage = null;
+        IsDirty = false;
+        RefreshLintAndNotify();
+    }
+
+    public void MarkExported()
+    {
+        if (!IsDirty)
+        {
+            return;
+        }
+
+        IsDirty = false;
+        OnChange?.Invoke();
+    }
+
+    public bool TryRestoreDraft(string json, out string? error)
+    {
+        try
+        {
+            var restored = KnowledgeGraphDocument.FromJson(json);
+            Document = restored;
+            ActiveSampleKey = string.Empty;
+            SelectedRationaleId = null;
+            SelectedJourneyId = Document.Journeys.FirstOrDefault()?.Id;
+            SelectedAcId = Document.AchievementCriteria.FirstOrDefault()?.Id;
+            SelectedRequirementId = Document.Requirements
+                .FirstOrDefault(r => r.NodeKind == RequirementNodeKind.Atomic)?.Id
+                ?? Document.Requirements.FirstOrDefault()?.Id;
+            LastErrorMessage = null;
+            IsDirty = true;
+            error = null;
+            RefreshLintAndNotify();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"ローカル下書きの復元に失敗しました: {ex.Message}";
+            LastErrorMessage = error;
+            OnChange?.Invoke();
+            return false;
+        }
+    }
+
+    public int SeedDefaultCrudBehaviors()
+    {
+        var defaults = KnowledgeGraphDocument.CreateDefaultCrudBehaviors();
+        var added = 0;
+        foreach (var def in defaults)
+        {
+            if (!Document.BehaviorCatalog.Any(b => string.Equals(b.BehaviorDefId, def.BehaviorDefId, StringComparison.Ordinal)))
+            {
+                Document.BehaviorCatalog.Add(def);
+                added++;
+            }
+        }
+
+        if (added > 0)
+        {
+            RefreshLintAndNotify(markDirty: true);
+        }
+
+        return added;
     }
 
     public bool TryLoadSample(string sampleKey, out string? error)
@@ -73,8 +156,11 @@ public sealed class WorkspaceStateService
             Document = KnowledgeGraphDocument.FromJson(json);
             ActiveSampleKey = sampleKey;
             LastErrorMessage = null;
+            IsDirty = false;
             error = null;
             SelectedRationaleId = null;
+            SelectedJourneyId = Document.Journeys.FirstOrDefault()?.Id;
+            SelectedAcId = Document.AchievementCriteria.FirstOrDefault()?.Id;
             SelectedRequirementId = Document.Requirements
                 .FirstOrDefault(r => r.NodeKind == RequirementNodeKind.Atomic)?.Id
                 ?? Document.Requirements.FirstOrDefault()?.Id;
@@ -95,6 +181,10 @@ public sealed class WorkspaceStateService
     {
         SelectedRequirementId = requirementId;
         SelectedRationaleId = null;
+        if (!string.IsNullOrWhiteSpace(requirementId))
+        {
+            WorkbenchMode = "usdm";
+        }
         OnChange?.Invoke();
     }
 
@@ -110,6 +200,76 @@ public sealed class WorkspaceStateService
         SelectedJourneyId = journeyId;
         OnChange?.Invoke();
     }
+
+    public void SetWorkbenchMode(string mode)
+    {
+        WorkbenchMode = string.Equals(mode, "ac", StringComparison.OrdinalIgnoreCase) ? "ac" : "usdm";
+        if (WorkbenchMode == "ac" && SelectedAcId is null)
+        {
+            SelectedAcId = Document.AchievementCriteria.FirstOrDefault()?.Id;
+        }
+        OnChange?.Invoke();
+    }
+
+    public void SelectAc(string? acId, bool switchToAcMode = false)
+    {
+        SelectedAcId = acId;
+        if (switchToAcMode)
+        {
+            WorkbenchMode = "ac";
+        }
+        OnChange?.Invoke();
+    }
+
+    public AchievementCriterion? GetSelectedAc() =>
+        SelectedAcId is null
+            ? null
+            : Document.AchievementCriteria.FirstOrDefault(ac => string.Equals(ac.Id, SelectedAcId, StringComparison.Ordinal));
+
+    public AchievementCriterion AddAchievementCriterion(string? rationaleId = null)
+    {
+        var nextIndex = 1;
+        while (Document.AchievementCriteria.Any(ac => ac.Id == $"AC-{nextIndex:000}"))
+        {
+            nextIndex++;
+        }
+
+        var parentRationaleId = !string.IsNullOrWhiteSpace(rationaleId)
+            ? rationaleId
+            : (Document.Rationales.FirstOrDefault()?.Id ?? string.Empty);
+
+        var ac = new AchievementCriterion
+        {
+            Id = $"AC-{nextIndex:000}",
+            RationaleId = parentRationaleId,
+            Title = $"新規達成基準 {nextIndex}",
+            Description = string.Empty,
+            LinkedCompositeIds = [],
+            LinkedJourneyIds = [],
+            ViewpointTags = []
+        };
+
+        Document.AchievementCriteria.Add(ac);
+        SelectedAcId = ac.Id;
+        WorkbenchMode = "ac";
+        RefreshLintAndNotify(markDirty: true);
+        return ac;
+    }
+
+    public void DeleteAchievementCriterion(string acId)
+    {
+        Document.AchievementCriteria.RemoveAll(ac => string.Equals(ac.Id, acId, StringComparison.Ordinal));
+        if (string.Equals(SelectedAcId, acId, StringComparison.Ordinal))
+        {
+            SelectedAcId = Document.AchievementCriteria.FirstOrDefault()?.Id;
+        }
+        RefreshLintAndNotify(markDirty: true);
+    }
+
+    public IReadOnlyList<LintDiagnostic> GetDiagnosticsForAc(string acId) =>
+        Diagnostics
+            .Where(d => string.Equals(d.TargetId, acId, StringComparison.Ordinal))
+            .ToList();
 
     public CanonicalRequirementNode? GetSelectedRequirement() =>
         SelectedRequirementId is null
@@ -139,7 +299,7 @@ public sealed class WorkspaceStateService
         Document.Rationales.Add(rationale);
         SelectedRationaleId = rationale.Id;
         SelectedRequirementId = null;
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
         return rationale;
     }
 
@@ -151,13 +311,13 @@ public sealed class WorkspaceStateService
             SelectedRationaleId = null;
             SelectedRequirementId = Document.Requirements.FirstOrDefault()?.Id;
         }
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
     }
 
     public void NotifyChanged()
     {
         LastErrorMessage = null;
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
     }
 
     public bool TryImportJson(string json, out string? error)
@@ -168,10 +328,13 @@ public sealed class WorkspaceStateService
             Document = imported;
             ActiveSampleKey = string.Empty;
             SelectedRationaleId = null;
+            SelectedJourneyId = Document.Journeys.FirstOrDefault()?.Id;
+            SelectedAcId = Document.AchievementCriteria.FirstOrDefault()?.Id;
             SelectedRequirementId = Document.Requirements
                 .FirstOrDefault(r => r.NodeKind == RequirementNodeKind.Atomic)?.Id
                 ?? Document.Requirements.FirstOrDefault()?.Id;
             LastErrorMessage = null;
+            IsDirty = false;
             error = null;
             RefreshLintAndNotify();
             return true;
@@ -355,7 +518,7 @@ public sealed class WorkspaceStateService
         Document.Requirements.Add(composite);
         SelectedRequirementId = composite.Id;
         SelectedRationaleId = null;
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
         return composite;
     }
 
@@ -401,7 +564,7 @@ public sealed class WorkspaceStateService
         Document.Requirements.Add(child);
         SelectedRequirementId = child.Id;
         SelectedRationaleId = null;
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
         return child;
     }
 
@@ -426,7 +589,7 @@ public sealed class WorkspaceStateService
         var i1 = childIndices[pos];
         var i2 = childIndices[targetPos];
         (Document.Requirements[i1], Document.Requirements[i2]) = (Document.Requirements[i2], Document.Requirements[i1]);
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
     }
 
     public void DeleteRequirement(string requirementId)
@@ -445,7 +608,7 @@ public sealed class WorkspaceStateService
             SelectedRequirementId = Document.Requirements.FirstOrDefault()?.Id;
         }
 
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
     }
 
     public FreeTextEscapeRecord? GetPendingEscape(string requirementId) =>
@@ -462,7 +625,7 @@ public sealed class WorkspaceStateService
         {
             existing.Reason = reason;
             existing.FreeText = freeText;
-            RefreshLintAndNotify();
+            RefreshLintAndNotify(markDirty: true);
             return existing;
         }
 
@@ -484,7 +647,7 @@ public sealed class WorkspaceStateService
         };
 
         Document.EscapeRecords.Add(record);
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
         return record;
     }
 
@@ -500,31 +663,31 @@ public sealed class WorkspaceStateService
 
         node.Behavior = CreateDefaultBehaviorNode();
 
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
     }
 
     public void AddBehaviorDefinition(BehaviorDefinition definition)
     {
         Document.BehaviorCatalog.Add(definition);
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
     }
 
     public void DeleteBehaviorDefinition(string behaviorDefId)
     {
         Document.BehaviorCatalog.RemoveAll(b => string.Equals(b.BehaviorDefId, behaviorDefId, StringComparison.Ordinal));
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
     }
 
     public void AddGlossaryTerm(ApprovedGlossaryTerm term)
     {
         Document.Glossary.Add(term);
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
     }
 
     public void DeleteGlossaryTerm(string termId)
     {
         Document.Glossary.RemoveAll(t => string.Equals(t.Id, termId, StringComparison.Ordinal));
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
     }
 
     public UserJourney AddJourney()
@@ -560,14 +723,14 @@ public sealed class WorkspaceStateService
         };
 
         Document.Journeys.Add(journey);
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
         return journey;
     }
 
     public void DeleteJourney(string journeyId)
     {
         Document.Journeys.RemoveAll(j => string.Equals(j.Id, journeyId, StringComparison.Ordinal));
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
     }
 
     public JourneyStep AddJourneyStep(UserJourney journey)
@@ -590,7 +753,7 @@ public sealed class WorkspaceStateService
         };
 
         journey.Steps.Add(step);
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
         return step;
     }
 
@@ -603,7 +766,7 @@ public sealed class WorkspaceStateService
         }
 
         (journey.Steps[index], journey.Steps[target]) = (journey.Steps[target], journey.Steps[index]);
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
     }
 
     public void DeleteJourneyStep(UserJourney journey, int index)
@@ -614,13 +777,23 @@ public sealed class WorkspaceStateService
         }
 
         journey.Steps.RemoveAt(index);
-        RefreshLintAndNotify();
+        RefreshLintAndNotify(markDirty: true);
     }
 
-    private void RefreshLintAndNotify()
+    private void RefreshLintAndNotify(bool markDirty = false)
     {
+        if (markDirty)
+        {
+            IsDirty = true;
+        }
+
         Diagnostics = GraphLinter.Lint(Document);
         OnChange?.Invoke();
+
+        if (markDirty)
+        {
+            OnDocumentMutated?.Invoke();
+        }
     }
 
     private static string? FindSampleFile(string startDir, string fileName)
@@ -638,11 +811,4 @@ public sealed class WorkspaceStateService
 
         return null;
     }
-
-    private static KnowledgeGraphDocument CreateEmptyDocument() => new()
-    {
-        SchemaVersion = "2.0",
-        DocumentId = "DOC-NEW-001",
-        Title = "新規要件仕様書"
-    };
 }

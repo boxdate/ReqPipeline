@@ -41,6 +41,30 @@ window.reqPipelineV2 = {
         document.body.removeChild(textarea);
         return ok;
     },
+    _draftStorageKey: "reqpipeline.v2.draft",
+    saveDraft: function (json) {
+        try {
+            window.localStorage.setItem(this._draftStorageKey, json);
+            return true;
+        } catch (err) {
+            return false;
+        }
+    },
+    loadDraft: function () {
+        try {
+            return window.localStorage.getItem(this._draftStorageKey);
+        } catch (err) {
+            return null;
+        }
+    },
+    clearDraft: function () {
+        try {
+            window.localStorage.removeItem(this._draftStorageKey);
+            return true;
+        } catch (err) {
+            return false;
+        }
+    },
     _mermaidInitialized: false,
     _mermaidRenderSeq: 0,
     renderMermaid: async function (elementId, code) {

@@ -9,7 +9,7 @@
             <div class="v2-brand">
                 <span class="v2-brand-mark" aria-hidden="true"></span>
                 <span class="v2-brand-title">ReqPipeline</span>
-                <span class="v2-schema-tag">V2</span>
+                <span class="v2-schema-tag">V2.1</span>
             </div>
 
             <nav class="v2-nav" aria-label="Primary Navigation">
@@ -53,23 +53,79 @@
             </div>
 
             <div class="v2-header-actions">
-                <div class="v2-segment" role="group" aria-label="Sample Switcher" title="サンプルデータセットを切替">
+                <!-- Project Switcher Dropdown -->
+                <div class="v2-project-switcher">
                     <button type="button"
-                            class="v2-segment-item @(Workspace.ActiveSampleKey == "crud" ? "active" : "")"
-                            @onclick='() => SwitchSample("crud", "CRUD")'>
-                        CRUD
+                            class="v2-switcher-trigger"
+                            aria-haspopup="menu"
+                            aria-expanded="@_projectMenuOpen"
+                            title="@GetProjectSwitcherTooltip()"
+                            @onclick="ToggleProjectMenu">
+                        <UiIcon Name="folder" Size="13" />
+                        <span class="v2-switcher-name">@GetCurrentProjectLabel()</span>
+                        @if (Workspace.IsDirty)
+                        {
+                            <span class="v2-dirty-dot" title="未保存の変更があります" aria-label="未保存の変更があります"></span>
+                        }
+                        <UiIcon Name="chevron-down" Size="13" />
                     </button>
-                    <button type="button"
-                            class="v2-segment-item @(Workspace.ActiveSampleKey == "doorlock" ? "active" : "")"
-                            @onclick='() => SwitchSample("doorlock", "DoorLock")'>
-                        DoorLock
-                    </button>
+
+                    @if (_projectMenuOpen)
+                    {
+                        <div class="v2-dropdown-backdrop" @onclick="CloseProjectMenu"></div>
+                        <div class="v2-switcher-menu" role="menu">
+                            <button type="button"
+                                    class="v2-switcher-item v2-switcher-item-primary"
+                                    role="menuitem"
+                                    @onclick="RequestNewProject">
+                                <UiIcon Name="folder-plus" Size="14" />
+                                <span>新規プロジェクトを作成...</span>
+                            </button>
+
+                            <div class="v2-switcher-divider"></div>
+                            <div class="v2-switcher-section-label">サンプルプロジェクト</div>
+
+                            <button type="button"
+                                    class="v2-switcher-item @(Workspace.ActiveSampleKey == "doorlock" ? "active" : "")"
+                                    role="menuitem"
+                                    @onclick='() => RequestSwitchSample("doorlock", "DoorLock（組込み安全系）")'>
+                                <span class="v2-switcher-item-text">DoorLock（組込み安全系）</span>
+                                @if (Workspace.ActiveSampleKey == "doorlock")
+                                {
+                                    <UiIcon Name="check" Size="13" />
+                                }
+                            </button>
+
+                            <button type="button"
+                                    class="v2-switcher-item @(Workspace.ActiveSampleKey == "crud" ? "active" : "")"
+                                    role="menuitem"
+                                    @onclick='() => RequestSwitchSample("crud", "CRUD（Web業務系）")'>
+                                <span class="v2-switcher-item-text">CRUD（Web業務系）</span>
+                                @if (Workspace.ActiveSampleKey == "crud")
+                                {
+                                    <UiIcon Name="check" Size="13" />
+                                }
+                            </button>
+
+                            @if (_hasSavedDraft)
+                            {
+                                <div class="v2-switcher-divider"></div>
+                                <button type="button"
+                                        class="v2-switcher-item v2-switcher-item-warm"
+                                        role="menuitem"
+                                        @onclick="RequestRestoreDraft">
+                                    <UiIcon Name="rotate-ccw" Size="14" />
+                                    <span class="v2-switcher-item-text">ローカル下書きを復元</span>
+                                </button>
+                            }
+                        </div>
+                    }
                 </div>
 
-                <label class="v2-btn v2-btn-sm v2-btn-outline mb-0" role="button" title="V2 JSONファイルをインポート">
+                <label class="v2-btn v2-btn-sm v2-btn-outline mb-0" role="button" title="V2/V2.1 JSONファイルをインポート">
                     <UiIcon Name="upload" Size="14" />
                     <span>Import</span>
-                    <InputFile OnChange="HandleImportJson" accept=".json,application/json" style="display:none" />
+                    <InputFile @key="_importInputKey" OnChange="HandleImportJson" accept=".json,application/json" style="display:none" />
                 </label>
 
                 <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" @onclick="HandleExportJson" title="現在の正本JSONをダウンロード">
@@ -79,6 +135,32 @@
             </div>
         </div>
     </header>
+
+    @if (_showDraftBanner && _hasSavedDraft)
+    {
+        <div class="v2-banner v2-banner-warm" role="status">
+            <span class="d-inline-flex align-items-center gap-2">
+                <UiIcon Name="rotate-ccw" Size="15" />
+                <span>
+                    前回の編集下書き
+                    @if (!string.IsNullOrWhiteSpace(_draftPreviewTitle))
+                    {
+                        <strong>「@_draftPreviewTitle」</strong>
+                    }
+                    を復元できます。
+                </span>
+            </span>
+            <div class="d-inline-flex align-items-center gap-2">
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline-warning" @onclick="RequestRestoreDraft">
+                    <UiIcon Name="rotate-ccw" Size="12" />
+                    <span>復元</span>
+                </button>
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-ghost" @onclick="DiscardSavedDraft">
+                    <span>破棄</span>
+                </button>
+            </div>
+        </div>
+    }
 
     @if (!string.IsNullOrWhiteSpace(_statusMessage))
     {
@@ -98,6 +180,113 @@
     </main>
 </div>
 
+<!-- ==================== NEW PROJECT MODAL ==================== -->
+@if (_showNewProjectModal)
+{
+    <div class="v2-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="new-project-modal-title">
+        <div class="v2-modal">
+            <div class="v2-modal-header">
+                <h5 id="new-project-modal-title" class="v2-modal-title">
+                    <UiIcon Name="folder-plus" Size="16" />
+                    <span>新規プロジェクトを作成</span>
+                </h5>
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-ghost" aria-label="閉じる" @onclick="CloseNewProjectModal">
+                    <UiIcon Name="x" Size="15" />
+                </button>
+            </div>
+            <div class="v2-modal-body">
+                <div class="mb-3">
+                    <label class="slot-label" for="new-project-title">
+                        プロジェクト名 <span class="v2-text-danger">*</span>
+                    </label>
+                    <input id="new-project-title"
+                           type="text"
+                           class="form-control form-control-sm"
+                           placeholder="例: エレベーター開閉制御仕様"
+                           @bind="_newProjectTitle"
+                           @bind:event="oninput"
+                           @onkeydown="OnNewProjectKeyDown" />
+                    @if (!string.IsNullOrWhiteSpace(_newProjectError))
+                    {
+                        <div class="small v2-text-danger mt-1">@_newProjectError</div>
+                    }
+                </div>
+
+                <div class="mb-3">
+                    <label class="slot-label" for="new-project-desc">概要・目的（任意）</label>
+                    <textarea id="new-project-desc"
+                              class="form-control form-control-sm v2-prose"
+                              rows="3"
+                              placeholder="対象システムのスコープや設計方針を記述（任意）"
+                              @bind="_newProjectDescription"></textarea>
+                </div>
+
+                <div class="v2-subcard">
+                    <label class="form-check-label d-flex align-items-start gap-2 small mb-0" style="cursor: pointer;">
+                        <input type="checkbox"
+                               class="form-check-input mt-1 flex-shrink-0"
+                               @bind="_newProjectIncludeCrudBehaviors" />
+                        <span>
+                            <strong class="v2-text-primary d-block">標準 CRUD 動詞プリセット（6種）を初期投入する</strong>
+                            <span class="v2-text-muted">create / delete / set / transition / display / prohibit を Behavior Catalog へ事前登録します。</span>
+                        </span>
+                    </label>
+                </div>
+            </div>
+            <div class="v2-modal-footer">
+                <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" @onclick="CloseNewProjectModal">
+                    キャンセル
+                </button>
+                <button type="button"
+                        class="v2-btn v2-btn-sm v2-btn-primary"
+                        disabled="@string.IsNullOrWhiteSpace(_newProjectTitle)"
+                        @onclick="ConfirmCreateNewProject">
+                    <UiIcon Name="plus" Size="13" />
+                    <span>空プロジェクトを作成</span>
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ==================== UNSAVED CHANGES GUARD MODAL ==================== -->
+@if (_pendingGuard is not null)
+{
+    <div class="v2-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="dirty-guard-modal-title">
+        <div class="v2-modal">
+            <div class="v2-modal-header">
+                <h5 id="dirty-guard-modal-title" class="v2-modal-title v2-text-warning">
+                    <UiIcon Name="alert-triangle" Size="16" />
+                    <span>未保存の変更があります</span>
+                </h5>
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-ghost" aria-label="閉じる" @onclick="CancelDirtyGuard">
+                    <UiIcon Name="x" Size="15" />
+                </button>
+            </div>
+            <div class="v2-modal-body">
+                <p class="mb-2 v2-prose">
+                    現在のプロジェクト「<strong>@GetCurrentProjectLabel()</strong>」にエクスポートされていない変更があります。
+                </p>
+                <p class="mb-0 small v2-text-secondary v2-prose">
+                    「@_pendingGuard.ActionLabel」を続行する前に、現在の仕様を JSON Export で退避するか、変更を破棄して続行するかを選択してください。
+                </p>
+            </div>
+            <div class="v2-modal-footer">
+                <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" @onclick="CancelDirtyGuard">
+                    キャンセル
+                </button>
+                <button type="button" class="v2-btn v2-btn-sm v2-btn-outline-danger" @onclick="DiscardAndProceedAsync">
+                    変更を破棄して続行
+                </button>
+                <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick="ExportAndProceedAsync">
+                    <UiIcon Name="download" Size="13" />
+                    <span>JSON Export して続行</span>
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 <div id="blazor-error-ui" data-nosnippet>
     予期しないエラーが発生しました。
     <a href="." class="reload">再読み込み</a>
@@ -105,21 +294,232 @@
 </div>
 
 @code {
+    private sealed record PendingGuardAction(string ActionLabel, Func<Task> ExecuteAsync);
+
     private string? _statusMessage;
     private bool _statusIsError;
+    private bool _projectMenuOpen;
+    private int _importInputKey;
+
+    // New Project Modal
+    private bool _showNewProjectModal;
+    private string _newProjectTitle = string.Empty;
+    private string _newProjectDescription = string.Empty;
+    private bool _newProjectIncludeCrudBehaviors;
+    private string? _newProjectError;
+
+    // IsDirty Guard Modal
+    private PendingGuardAction? _pendingGuard;
+
+    // localStorage Draft Auto-Save & Restore
+    private bool _hasSavedDraft;
+    private bool _showDraftBanner;
+    private string? _draftPreviewTitle;
+    private CancellationTokenSource? _draftSaveCts;
+    private bool _disposed;
 
     protected override void OnInitialized()
     {
         Workspace.OnChange += HandleWorkspaceChanged;
+        Workspace.OnDocumentMutated += HandleDocumentMutated;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await CheckSavedDraftOnStartupAsync();
+    }
+
+    private async Task CheckSavedDraftOnStartupAsync()
+    {
+        try
+        {
+            var draftJson = await JS.InvokeAsync<string?>("reqPipelineV2.loadDraft");
+            if (string.IsNullOrWhiteSpace(draftJson))
+            {
+                return;
+            }
+
+            try
+            {
+                var parsed = KnowledgeGraphDocument.FromJson(draftJson);
+                _hasSavedDraft = true;
+                _draftPreviewTitle = string.IsNullOrWhiteSpace(parsed.Title) ? "無題のプロジェクト" : parsed.Title;
+                _showDraftBanner = true;
+                StateHasChanged();
+            }
+            catch
+            {
+                // 破損または旧形式のドラフトは安全に削除して起動不能を防ぐ
+                await JS.InvokeAsync<bool>("reqPipelineV2.clearDraft");
+                _hasSavedDraft = false;
+                _showDraftBanner = false;
+                _draftPreviewTitle = null;
+            }
+        }
+        catch
+        {
+            // JS Interop 不可時は安全にスキップ
+        }
     }
 
     private void HandleWorkspaceChanged()
     {
-        InvokeAsync(StateHasChanged);
+        if (!_disposed)
+        {
+            InvokeAsync(StateHasChanged);
+        }
     }
 
-    private void SwitchSample(string sampleKey, string displayName)
+    private void HandleDocumentMutated()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _draftSaveCts?.Cancel();
+        _draftSaveCts?.Dispose();
+        _draftSaveCts = new CancellationTokenSource();
+        var token = _draftSaveCts.Token;
+
+        _ = DebouncedSaveDraftAsync(token);
+    }
+
+    private async Task DebouncedSaveDraftAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(800, token);
+            if (token.IsCancellationRequested || _disposed)
+            {
+                return;
+            }
+
+            await InvokeAsync(async () =>
+            {
+                if (token.IsCancellationRequested || _disposed || !Workspace.IsDirty)
+                {
+                    return;
+                }
+
+                var json = Workspace.ExportJson();
+                var saved = await JS.InvokeAsync<bool>("reqPipelineV2.saveDraft", json);
+                if (saved)
+                {
+                    _hasSavedDraft = true;
+                    _draftPreviewTitle = GetCurrentProjectLabel();
+                    _showDraftBanner = false;
+                    StateHasChanged();
+                }
+            });
+        }
+        catch (TaskCanceledException)
+        {
+            // デバウンスによる正常キャンセル
+        }
+        catch
+        {
+            // 切断時や localStorage エラーは安全に握りつぶす
+        }
+    }
+
+    private string GetCurrentProjectLabel() =>
+        string.IsNullOrWhiteSpace(Workspace.Document.Title)
+            ? "無題のプロジェクト"
+            : Workspace.Document.Title;
+
+    private string GetProjectSwitcherTooltip() =>
+        Workspace.IsDirty
+            ? $"{GetCurrentProjectLabel()}（未保存の変更あり）— クリックしてプロジェクトを切替"
+            : $"{GetCurrentProjectLabel()} — クリックしてプロジェクトを切替";
+
+    private void ToggleProjectMenu()
+    {
+        _projectMenuOpen = !_projectMenuOpen;
+    }
+
+    private void CloseProjectMenu()
+    {
+        _projectMenuOpen = false;
+    }
+
+    private void RequestNewProject()
+    {
+        _projectMenuOpen = false;
+        RunWithDirtyGuard("新規プロジェクト作成", () =>
+        {
+            OpenNewProjectModal();
+            return Task.CompletedTask;
+        });
+    }
+
+    private void OpenNewProjectModal()
+    {
+        _newProjectTitle = string.Empty;
+        _newProjectDescription = string.Empty;
+        _newProjectIncludeCrudBehaviors = false;
+        _newProjectError = null;
+        _showNewProjectModal = true;
+    }
+
+    private void CloseNewProjectModal()
+    {
+        _showNewProjectModal = false;
+        _newProjectError = null;
+    }
+
+    private void OnNewProjectKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            ConfirmCreateNewProject();
+        }
+        else if (e.Key == "Escape")
+        {
+            CloseNewProjectModal();
+        }
+    }
+
+    private void ConfirmCreateNewProject()
+    {
+        if (string.IsNullOrWhiteSpace(_newProjectTitle))
+        {
+            _newProjectError = "プロジェクト名を入力してください。";
+            return;
+        }
+
+        var title = _newProjectTitle.Trim();
+        var description = _newProjectDescription.Trim();
+        var includeCrud = _newProjectIncludeCrudBehaviors;
+
+        CancelPendingDraftSave();
+        Workspace.CreateNewProject(title, description, includeCrud);
+        _showNewProjectModal = false;
+        _newProjectError = null;
+        _statusIsError = false;
+        _statusMessage = includeCrud
+            ? $"空プロジェクト「{title}」を作成しました（標準 CRUD 動詞 6種を初期投入）。"
+            : $"空プロジェクト「{title}」を作成しました。";
+    }
+
+    private void RequestSwitchSample(string sampleKey, string displayName)
+    {
+        _projectMenuOpen = false;
+        RunWithDirtyGuard($"{displayName} への切替", () =>
+        {
+            SwitchSampleCore(sampleKey, displayName);
+            return Task.CompletedTask;
+        });
+    }
+
+    private void SwitchSampleCore(string sampleKey, string displayName)
+    {
+        CancelPendingDraftSave();
         if (Workspace.TryLoadSample(sampleKey, out var error))
         {
             _statusIsError = false;
@@ -132,6 +532,65 @@
         }
     }
 
+    private void RequestRestoreDraft()
+    {
+        _projectMenuOpen = false;
+        RunWithDirtyGuard("ローカル下書きの復元", RestoreSavedDraftCoreAsync);
+    }
+
+    private async Task RestoreSavedDraftCoreAsync()
+    {
+        CancelPendingDraftSave();
+        try
+        {
+            var draftJson = await JS.InvokeAsync<string?>("reqPipelineV2.loadDraft");
+            if (string.IsNullOrWhiteSpace(draftJson))
+            {
+                _hasSavedDraft = false;
+                _showDraftBanner = false;
+                _statusIsError = true;
+                _statusMessage = "復元可能なローカル下書きが見つかりませんでした。";
+                return;
+            }
+
+            if (Workspace.TryRestoreDraft(draftJson, out var error))
+            {
+                _showDraftBanner = false;
+                _statusIsError = false;
+                _statusMessage = $"ローカル下書き「{GetCurrentProjectLabel()}」を復元しました。";
+            }
+            else
+            {
+                await JS.InvokeAsync<bool>("reqPipelineV2.clearDraft");
+                _hasSavedDraft = false;
+                _showDraftBanner = false;
+                _statusIsError = true;
+                _statusMessage = error ?? "ローカル下書きが破損していたため破棄しました。";
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusIsError = true;
+            _statusMessage = $"ローカル下書きの読み込みエラー: {ex.Message}";
+        }
+    }
+
+    private async Task DiscardSavedDraft()
+    {
+        try
+        {
+            await JS.InvokeAsync<bool>("reqPipelineV2.clearDraft");
+        }
+        catch
+        {
+            // ignore
+        }
+
+        _hasSavedDraft = false;
+        _showDraftBanner = false;
+        _draftPreviewTitle = null;
+    }
+
     private async Task HandleImportJson(InputFileChangeEventArgs e)
     {
         try
@@ -140,22 +599,37 @@
             using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
             using var reader = new StreamReader(stream);
             var json = await reader.ReadToEndAsync();
+            var fileName = file.Name;
 
-            if (Workspace.TryImportJson(json, out var error))
+            // 同一ファイル再選択を可能にするため InputFile を再生成
+            _importInputKey++;
+
+            RunWithDirtyGuard($"'{fileName}' のインポート", () =>
             {
-                _statusIsError = false;
-                _statusMessage = $"'{file.Name}' をインポートしました（要求: {Workspace.Document.Requirements.Count}件 / 語彙: {Workspace.Document.Glossary.Count}件）。";
-            }
-            else
-            {
-                _statusIsError = true;
-                _statusMessage = error ?? "JSONのインポートに失敗しました。";
-            }
+                ImportJsonCore(fileName, json);
+                return Task.CompletedTask;
+            });
         }
         catch (Exception ex)
         {
+            _importInputKey++;
             _statusIsError = true;
             _statusMessage = $"ファイル読み込みエラー: {ex.Message}";
+        }
+    }
+
+    private void ImportJsonCore(string fileName, string json)
+    {
+        CancelPendingDraftSave();
+        if (Workspace.TryImportJson(json, out var error))
+        {
+            _statusIsError = false;
+            _statusMessage = $"'{fileName}' をインポートしました（要求: {Workspace.Document.Requirements.Count}件 / 語彙: {Workspace.Document.Glossary.Count}件）。";
+        }
+        else
+        {
+            _statusIsError = true;
+            _statusMessage = error ?? "JSONのインポートに失敗しました。";
         }
     }
 
@@ -168,12 +642,81 @@
         var fileName = $"{docId}.v2.json";
 
         await JS.InvokeVoidAsync("reqPipelineV2.downloadTextFile", fileName, json, "application/json;charset=utf-8");
+
+        CancelPendingDraftSave();
+        Workspace.MarkExported();
+
+        try
+        {
+            await JS.InvokeAsync<bool>("reqPipelineV2.clearDraft");
+            _hasSavedDraft = false;
+            _showDraftBanner = false;
+            _draftPreviewTitle = null;
+        }
+        catch
+        {
+            // ignore
+        }
+
         _statusIsError = false;
         _statusMessage = $"'{fileName}' をエクスポートしました。";
     }
 
+    private void RunWithDirtyGuard(string actionLabel, Func<Task> executeAsync)
+    {
+        if (Workspace.IsDirty)
+        {
+            _pendingGuard = new PendingGuardAction(actionLabel, executeAsync);
+            return;
+        }
+
+        _ = ExecuteDirectAsync(executeAsync);
+    }
+
+    private async Task ExecuteDirectAsync(Func<Task> executeAsync)
+    {
+        await executeAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CancelDirtyGuard()
+    {
+        _pendingGuard = null;
+    }
+
+    private async Task DiscardAndProceedAsync()
+    {
+        var pending = _pendingGuard;
+        _pendingGuard = null;
+        if (pending is not null)
+        {
+            await pending.ExecuteAsync();
+        }
+    }
+
+    private async Task ExportAndProceedAsync()
+    {
+        var pending = _pendingGuard;
+        _pendingGuard = null;
+        await HandleExportJson();
+        if (pending is not null)
+        {
+            await pending.ExecuteAsync();
+        }
+    }
+
+    private void CancelPendingDraftSave()
+    {
+        _draftSaveCts?.Cancel();
+        _draftSaveCts?.Dispose();
+        _draftSaveCts = null;
+    }
+
     public void Dispose()
     {
+        _disposed = true;
         Workspace.OnChange -= HandleWorkspaceChanged;
+        Workspace.OnDocumentMutated -= HandleDocumentMutated;
+        CancelPendingDraftSave();
     }
 }

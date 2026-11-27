@@ -23,7 +23,11 @@
                 <span>JSON インポート</span>
                 <InputFile OnChange="HandleImportGlossaryJson" accept=".json,application/json" style="display:none" />
             </label>
-            <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" @onclick="HandleExportGlossaryJson" title="現在の Glossary を JSON でエクスポート">
+            <button type="button"
+                    class="v2-btn v2-btn-sm v2-btn-outline"
+                    disabled="@(Workspace.Document.Glossary.Count == 0)"
+                    @onclick="HandleExportGlossaryJson"
+                    title="現在の Glossary を JSON でエクスポート">
                 <UiIcon Name="download" Size="13" />
                 <span>JSON エクスポート</span>
             </button>
@@ -48,6 +52,21 @@
         </div>
     }
 
+    @if (Workspace.Document.Glossary.Count == 0)
+    {
+        <EmptyState Icon="book-open"
+                    Title="語彙・状態・イベントが未登録です"
+                    Description="システム名・アクター・状態変数・イベントなどの承認済み語彙を登録すると、Workbench のスロット候補や静的検証に反映されます。">
+            <Actions>
+                <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick="CreateNewTerm">
+                    <UiIcon Name="plus" Size="13" />
+                    <span>語彙を追加</span>
+                </button>
+            </Actions>
+        </EmptyState>
+    }
+    else
+    {
     <div class="row g-3">
         <!-- Term List -->
         <div class="col-lg-7">
@@ -321,6 +340,7 @@
             }
         </div>
     </div>
+    }
 </div>
 
 @code {
@@ -342,6 +362,10 @@
 
     private void HandleChanged()
     {
+        if (_selectedTermId is null || GetSelectedTerm() is null)
+        {
+            _selectedTermId = Workspace.Document.Glossary.FirstOrDefault()?.Id;
+        }
         InvokeAsync(StateHasChanged);
     }
 
