@@ -168,9 +168,16 @@
     <section class="wb-pane wb-pane-center">
         @if (selectedJourney is null || simulation is null)
         {
-            <div class="v2-card text-center py-5 v2-text-muted">
-                左ペインからジャーニーを選択するか、「ジャーニー追加」で作成してください。
-            </div>
+            <EmptyState Icon="compass"
+                        Title="E2E シナリオがありません"
+                        Description="ユーザー行動と Atomic 要求をつなぐカスタマージャーニーを作成すると、状態のバトン渡し（しりとり整合性）をリアルタイム検証できます。">
+                <Actions>
+                    <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick="CreateJourney">
+                        <UiIcon Name="plus" Size="13" />
+                        <span>Journey を作成</span>
+                    </button>
+                </Actions>
+            </EmptyState>
         }
         else
         {

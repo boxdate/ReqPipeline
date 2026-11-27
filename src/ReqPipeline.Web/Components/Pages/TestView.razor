@@ -9,6 +9,9 @@
 @{
     var isJa = _language == TestExportLanguage.Japanese;
     var summary = _spec.Summary;
+    var hasCases = summary.TotalTestCases > 0;
+    var hasCoverageDenominator = summary.TotalNonEscapeAtomicRequirements > 0;
+    var isProjectEmptyForTests = summary.TotalTestCases == 0 && _spec.ViewpointContainers.Count == 0;
     var reqContainers = _spec.ViewpointContainers
         .Where(c => c.Kind == TestViewpointKind.RequirementTree)
         .ToList();
@@ -50,9 +53,16 @@
             <span class="tv-metric"
                   title="@summary.CoveredAtomicRequirements / @summary.TotalNonEscapeAtomicRequirements Atomic Requirements">
                 <span class="tv-metric-label">@(isJa ? "要求カバレッジ" : "Coverage")</span>
-                <span class="tv-metric-value @(summary.AtomicRequirementCoveragePercent >= 100.0 ? "tv-metric-value-ok" : "tv-metric-value-warn")">
-                    @summary.AtomicRequirementCoveragePercent.ToString("0.0")%
-                </span>
+                @if (!hasCoverageDenominator)
+                {
+                    <span class="tv-metric-value v2-text-muted">—</span>
+                }
+                else
+                {
+                    <span class="tv-metric-value @(summary.AtomicRequirementCoveragePercent >= 100.0 ? "tv-metric-value-ok" : "tv-metric-value-warn")">
+                        @summary.AtomicRequirementCoveragePercent.ToString("0.0")%
+                    </span>
+                }
             </span>
             <span class="tv-metric-sep" aria-hidden="true"></span>
             <span class="tv-metric" title="FSM マトリクス内の未定義 (UndefinedNoOp) セル総数">
@@ -95,11 +105,11 @@
 
             <!-- Markdown -->
             <div class="tv-export-group" role="group" aria-label="Markdown Export">
-                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="CopyMarkdown" title="Markdown をクリップボードへコピー">
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" disabled="@(!hasCases)" @onclick="CopyMarkdown" title="Markdown をクリップボードへコピー">
                     <UiIcon Name="copy" Size="12" />
                     <span>MD</span>
                 </button>
-                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="DownloadMarkdown" title="Markdown (.md) をダウンロード">
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" disabled="@(!hasCases)" @onclick="DownloadMarkdown" title="Markdown (.md) をダウンロード">
                     <UiIcon Name="download" Size="12" />
                     <span>.md</span>
                 </button>
@@ -107,29 +117,29 @@
 
             <!-- CSV -->
             <div class="tv-export-group">
-                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="DownloadCsv" title="UTF-8 BOM 付き CSV をダウンロード">
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" disabled="@(!hasCases)" @onclick="DownloadCsv" title="UTF-8 BOM 付き CSV をダウンロード">
                     <UiIcon Name="download" Size="12" />
                     <span>CSV</span>
                 </button>
                 <label class="form-check-label small d-inline-flex align-items-center gap-1 mb-0 v2-text-secondary" style="cursor: pointer; font-size: 0.74rem;" title="末尾に Result, Tester, ExecutedAt, Comment の4列を追加">
-                    <input type="checkbox" class="form-check-input mt-0" @bind="_csvIncludeExecutionColumns" />
+                    <input type="checkbox" class="form-check-input mt-0" disabled="@(!hasCases)" @bind="_csvIncludeExecutionColumns" />
                     <span>@(isJa ? "実行列" : "Exec cols")</span>
                 </label>
             </div>
 
             <!-- Gherkin -->
             <div class="tv-export-group">
-                <select class="form-select form-select-sm py-0" style="width: auto; font-size: 0.74rem; height: 24px;" @bind="_gherkinLevelFilter" aria-label="Gherkin Level">
+                <select class="form-select form-select-sm py-0" style="width: auto; font-size: 0.74rem; height: 24px;" disabled="@(!hasCases)" @bind="_gherkinLevelFilter" aria-label="Gherkin Level">
                     <option value="">@(isJa ? "全階層" : "All")</option>
                     <option value="Unit">Unit</option>
                     <option value="Component">Component</option>
                     <option value="E2E">E2E</option>
                 </select>
-                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="CopyGherkin" title="Gherkin をクリップボードへコピー">
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" disabled="@(!hasCases)" @onclick="CopyGherkin" title="Gherkin をクリップボードへコピー">
                     <UiIcon Name="copy" Size="12" />
                     <span>Gherkin</span>
                 </button>
-                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" @onclick="DownloadGherkin" title="Gherkin (.feature) をダウンロード">
+                <button type="button" class="v2-btn v2-btn-xs v2-btn-outline" disabled="@(!hasCases)" @onclick="DownloadGherkin" title="Gherkin (.feature) をダウンロード">
                     <UiIcon Name="file-code" Size="12" />
                     <span>.feature</span>
                 </button>
@@ -282,6 +292,27 @@
 
         <!-- RIGHT PANE: DETAIL & INTERACTIVE 2D MATRIX -->
         <section class="wb-pane wb-pane-center">
+            @if (isProjectEmptyForTests)
+            {
+                <EmptyState Icon="clipboard-check"
+                            Title="@(isJa ? "導出されたテストケースがありません" : "No Derived Test Cases")"
+                            Description="@(isJa
+                                ? "Workbench で要求（Composite / Atomic）や Journey を定義すると、Unit・FSM 状態遷移マトリクス・E2E のテストケースが決定論的に自動導出されます。"
+                                : "Define requirements (Composite / Atomic) or journeys in Workbench to deterministically derive Unit, FSM Matrix, and E2E test cases.")">
+                    <Actions>
+                        <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick='() => Navigation.NavigateTo("/")'>
+                            <UiIcon Name="arrow-right" Size="13" />
+                            <span>@(isJa ? "Workbench で要求を作成" : "Create Requirements in Workbench")</span>
+                        </button>
+                        <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" @onclick='() => Navigation.NavigateTo("/glossary")'>
+                            <UiIcon Name="book-open" Size="13" />
+                            <span>@(isJa ? "Glossary で語彙を定義" : "Define Glossary Terms")</span>
+                        </button>
+                    </Actions>
+                </EmptyState>
+            }
+            else
+            {
             <!-- 共通フィルタバー -->
             <div class="v2-card py-2 px-3 mb-3">
                 <div class="d-flex align-items-center flex-wrap gap-2">
@@ -598,6 +629,7 @@
                         @RenderTestCaseCard(tc, isJa)
                     }
                 }
+            }
             }
         </section>
     </div>

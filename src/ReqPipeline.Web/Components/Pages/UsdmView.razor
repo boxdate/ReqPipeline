@@ -1,9 +1,14 @@
 @page "/usdm"
 @implements IDisposable
 @inject WorkspaceStateService Workspace
+@inject NavigationManager Navigation
 @inject IJSRuntime JS
 
 <PageTitle>USDM View - ReqPipeline V2</PageTitle>
+
+@{
+    var isEmpty = Workspace.Document.Rationales.Count == 0 && Workspace.Document.Requirements.Count == 0;
+}
 
 <div class="container py-3" style="max-width: 1140px;">
     <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
@@ -22,17 +27,32 @@
                     <span>コピーしました</span>
                 </span>
             }
-            <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" @onclick="CopyMarkdown">
+            <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" disabled="@isEmpty" @onclick="CopyMarkdown">
                 <UiIcon Name="copy" Size="13" />
                 <span>Markdown をコピー</span>
             </button>
-            <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick="DownloadMarkdown">
+            <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" disabled="@isEmpty" @onclick="DownloadMarkdown">
                 <UiIcon Name="download" Size="13" />
                 <span>.md ダウンロード</span>
             </button>
         </div>
     </div>
 
+    @if (isEmpty)
+    {
+        <EmptyState Icon="file-text"
+                    Title="要求が未登録です"
+                    Description="Workbench で Rationale（根拠）と要求（Composite / Atomic）を登録すると、USDM 形式の階層プレビューと Markdown が自動生成されます。">
+            <Actions>
+                <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick='() => Navigation.NavigateTo("/")'>
+                    <UiIcon Name="arrow-right" Size="13" />
+                    <span>Workbench で要求を作成</span>
+                </button>
+            </Actions>
+        </EmptyState>
+    }
+    else
+    {
     <div class="row g-3">
         <!-- Structured Visual Preview -->
         <div class="col-lg-6">
@@ -89,6 +109,7 @@
             </div>
         </div>
     </div>
+    }
 </div>
 
 @code {

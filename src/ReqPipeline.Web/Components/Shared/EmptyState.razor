@@ -1,0 +1,33 @@
+<div class="v2-empty-state @(Compact ? "v2-empty-state-compact" : "")">
+    <div class="v2-empty-state-icon" aria-hidden="true">
+        <UiIcon Name="@Icon" Size="@(Compact ? 22 : 28)" />
+    </div>
+    <h5 class="v2-empty-state-title">@Title</h5>
+    @if (!string.IsNullOrWhiteSpace(Description))
+    {
+        <p class="v2-empty-state-desc">@Description</p>
+    }
+    @if (Actions is not null)
+    {
+        <div class="v2-empty-state-actions">
+            @Actions
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string Icon { get; set; } = "file-text";
+
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Description { get; set; }
+
+    [Parameter]
+    public bool Compact { get; set; }
+
+    [Parameter]
+    public RenderFragment? Actions { get; set; }
+}

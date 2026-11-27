@@ -150,13 +150,153 @@
     gap: 0.45rem;
 }
 
+/* ==================== Project Switcher Dropdown ==================== */
+.v2-project-switcher {
+    position: relative;
+}
+
+.v2-switcher-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.24rem 0.62rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong);
+    background: var(--surface-app);
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.v2-switcher-trigger:hover {
+    background: var(--surface-subtle);
+    border-color: var(--border-strong);
+}
+
+.v2-switcher-name {
+    max-width: 165px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.v2-dirty-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--cud-warning-accent);
+    flex-shrink: 0;
+}
+
+.v2-dropdown-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 150;
+}
+
+.v2-switcher-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 260px;
+    padding: 0.35rem;
+    background: var(--surface-card);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: 0 12px 28px rgba(28, 25, 23, 0.12);
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.v2-switcher-section-label {
+    padding: 0.28rem 0.55rem 0.18rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.v2-switcher-divider {
+    height: 1px;
+    background: var(--border-subtle);
+    margin: 0.25rem 0;
+}
+
+.v2-switcher-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.42rem 0.58rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.v2-switcher-item:hover {
+    background: var(--surface-subtle);
+}
+
+.v2-switcher-item.active {
+    background: var(--surface-app);
+    border-color: var(--border-subtle);
+    font-weight: 600;
+}
+
+.v2-switcher-item-primary {
+    justify-content: flex-start;
+    color: var(--cud-primary-fg);
+    font-weight: 600;
+    background: var(--surface-app);
+}
+
+.v2-switcher-item-primary:hover {
+    background: var(--cud-primary-bg);
+}
+
+.v2-switcher-item-warm {
+    justify-content: flex-start;
+    color: var(--cud-warning-fg);
+    font-weight: 600;
+}
+
+.v2-switcher-item-warm:hover {
+    background: var(--cud-warning-bg);
+}
+
+.v2-switcher-item-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .v2-banner {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 0.75rem;
     padding: 0.5rem 1.2rem;
     font-size: 0.82rem;
     border-bottom: 1px solid transparent;
+}
+
+.v2-banner-warm {
+    background: var(--cud-warning-bg);
+    color: var(--cud-warning-fg);
+    border-bottom-color: var(--cud-warning-border);
 }
 
 .v2-banner-info {

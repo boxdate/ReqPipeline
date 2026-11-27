@@ -52,12 +52,16 @@
 
     @if (_models.Count == 0)
     {
-        <div class="v2-card text-center py-5">
-            <div class="fw-semibold v2-text-primary mb-1">LifecycleState (Enum) が定義されていません</div>
-            <div class="v2-text-muted small">
-                Glossary タブで <code>ConceptType = LifecycleState</code> かつ <code>LogicalType = Enum</code> の語彙を追加すると、ここに状態遷移図が表示されます。
-            </div>
-        </div>
+        <EmptyState Icon="git-branch"
+                    Title="状態変数（LifecycleState）が未登録です"
+                    Description="Glossary で ConceptType = LifecycleState かつ LogicalType = Enum の語彙を定義すると、決定論的な状態遷移図と完全性チェックが表示されます。">
+            <Actions>
+                <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick='() => Navigation.NavigateTo("/glossary")'>
+                    <UiIcon Name="book-open" Size="13" />
+                    <span>Glossary で状態変数を定義</span>
+                </button>
+            </Actions>
+        </EmptyState>
     }
     else
     {
@@ -264,7 +268,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_selectedModel is null)
+        if (_models.Count == 0 || _selectedModel is null)
         {
             return;
         }

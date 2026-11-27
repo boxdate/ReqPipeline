@@ -18,6 +18,25 @@
         </button>
     </div>
 
+    @if (Workspace.Document.BehaviorCatalog.Count == 0)
+    {
+        <EmptyState Icon="layers"
+                    Title="振る舞い定義がありません"
+                    Description="要求の動作（Behavior）で使用する動詞カタログが未登録です。標準 CRUD 動詞プリセット（6種）を一括投入するか、独自の動詞を追加してください。">
+            <Actions>
+                <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick="CreateNewBehavior">
+                    <UiIcon Name="plus" Size="13" />
+                    <span>振る舞いを追加</span>
+                </button>
+                <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" @onclick="SeedCrudPreset">
+                    <UiIcon Name="package" Size="13" />
+                    <span>標準動詞プリセットを投入</span>
+                </button>
+            </Actions>
+        </EmptyState>
+    }
+    else
+    {
     <div class="row g-3">
         <!-- Behavior List -->
         <div class="col-lg-7">
@@ -249,6 +268,7 @@
             }
         </div>
     </div>
+    }
 </div>
 
 @code {
@@ -325,6 +345,12 @@
 
         Workspace.AddBehaviorDefinition(def);
         _selectedDefId = def.BehaviorDefId;
+    }
+
+    private void SeedCrudPreset()
+    {
+        Workspace.SeedDefaultCrudBehaviors();
+        _selectedDefId = Workspace.Document.BehaviorCatalog.FirstOrDefault()?.BehaviorDefId;
     }
 
     private void DeleteBehavior(string defId)

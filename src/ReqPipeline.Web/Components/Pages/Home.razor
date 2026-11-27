@@ -1,6 +1,7 @@
 ﻿@page "/"
 @implements IDisposable
 @inject WorkspaceStateService Workspace
+@inject NavigationManager Navigation
 
 <PageTitle>Workbench - ReqPipeline V2</PageTitle>
 
@@ -186,9 +187,37 @@
         }
         else if (selected is null)
         {
-            <div class="slot-card text-center py-5 v2-text-muted">
-                左のツリーから要求ノードを選択するか、「+ 親要求」で新規作成してください。
-            </div>
+            @if (Workspace.Document.Rationales.Count == 0 && Workspace.Document.Requirements.Count == 0)
+            {
+                <EmptyState Icon="file-text"
+                            Title="まだ根拠（US / Rationale）がありません"
+                            Description="まずは要求の背景となる根拠（Rationale）を作成するか、Glossary でドメイン語彙を定義して仕様設計を始めましょう。">
+                    <Actions>
+                        <button type="button" class="v2-btn v2-btn-sm v2-btn-primary" @onclick="() => Workspace.AddRationale()">
+                            <UiIcon Name="plus" Size="13" />
+                            <span>最初の Rationale を作成</span>
+                        </button>
+                        <button type="button" class="v2-btn v2-btn-sm v2-btn-outline" @onclick='() => Navigation.NavigateTo("/glossary")'>
+                            <UiIcon Name="book-open" Size="13" />
+                            <span>Glossary から語彙を定義</span>
+                        </button>
+                    </Actions>
+                </EmptyState>
+            }
+            else
+            {
+                <EmptyState Icon="file-text"
+                            Compact="true"
+                            Title="編集するノードを選択してください"
+                            Description="左のツリーから Rationale または要求ノードを選択するか、新しく親要求を追加してください。">
+                    <Actions>
+                        <button type="button" class="v2-btn v2-btn-sm v2-btn-outline-primary" @onclick="() => Workspace.AddCompositeRequirement()">
+                            <UiIcon Name="plus" Size="13" />
+                            <span>親要求を追加</span>
+                        </button>
+                    </Actions>
+                </EmptyState>
+            }
         }
         else if (selected.NodeKind == RequirementNodeKind.Composite)
         {
